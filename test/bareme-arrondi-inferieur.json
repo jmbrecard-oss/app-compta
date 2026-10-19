@@ -1,0 +1,31 @@
+{
+  "bareme": {
+    "code": "TEST-ARRONDI-INF",
+    "libelle": "Bareme de test - arrondi inferieur",
+    "statut": "FICTIF",
+    "avertissement": "Fixture de test. Aucune valeur reglementaire.",
+    "texte_reference": "aucun",
+    "a_valider_par": "aucun",
+    "devise": "XPF",
+    "decimales": 0,
+    "en_vigueur_du": "1978-09-26",
+    "en_vigueur_au": null
+  },
+  "arrondi": "INFERIEUR",
+  "prestations": [
+    {
+      "code": "EMO-VENTE",
+      "libelle": "Emolument proportionnel - vente d immeuble",
+      "categorie": "EMOLUMENT",
+      "compte": "706100",
+      "mode": "TRANCHES",
+      "tranches": [
+        { "jusqu_a": 1000000, "taux_ppm": 40000 },
+        { "jusqu_a": 3000000, "taux_ppm": 20000 },
+        { "jusqu_a": null, "taux_ppm": 8000 }
+      ],
+      "minimum": 0,
+      "tgc": "TGC11"
+    }
+  ]
+}

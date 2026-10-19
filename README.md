@@ -58,14 +58,27 @@ motif conservé.
 
 **Contrôles bloquants.** Équilibre, montants entiers en XPF, exercice ouvert,
 chronologie du journal, étanchéité office/clients, solde client jamais débiteur,
-représentation permanente des fonds clients. Un refus annule toute l'écriture et
+représentation permanente des fonds clients, rattachement au dossier de tout
+émolument et de tout débours à reverser. Un refus annule toute l'écriture et
 la laisse en brouillon, avec le motif exact.
+
+**Taxe des actes.** Liquidation des émoluments, des débours et des taxes à partir d'un
+barème **paramétrable** : tranches, taux, assiettes, minimums, comptes d'imputation et
+règle d'arrondi sont lus dans un fichier de données, jamais écrits dans le code. Calcul
+entier de bout en bout, un seul arrondi par prestation, justification conservée tranche
+par tranche. Une taxe passe par projet, arrêté — où elle est recalculée et confrontée au
+barème — puis comptabilisation, qui génère l'écriture de l'acte. Compte définitif du
+client et état des sommes restant à reverser au Trésor.
+
+> Le barème livré est **fictif** et doit être remplacé par le tarif du décret
+> n° 78-321/CG du 26 septembre 1978. Voir [CONFORMITE.md](CONFORMITE.md).
 
 **Rapprochement bancaire.** Pointage des mouvements, calcul du solde rapproché,
 clôture refusée tant qu'un écart subsiste.
 
 **États.** Balance, grand livre, journaux, compte de résultat, bilan, état des
-comptes clients, état de représentation des fonds. Exports FEC (18 colonnes) et CSV.
+comptes clients, état de représentation des fonds, état des taxes, état des sommes à
+reverser aux tiers, compte définitif du client. Exports FEC (18 colonnes) et CSV.
 
 **Inspection.** Un écran rassemble ce qu'un contrôle demande : volumétrie, état de
 la chaîne d'inaltérabilité, anomalies classées par gravité, exercices, piste
@@ -96,10 +109,15 @@ src/
   pcn.js              plan comptable notarial adapté à la Nouvelle-Calédonie
   db.js hash.js       accès SQLite, empreintes, mots de passe
   audit.js auth.js    journal d'audit chaîné, sessions et droits
+  erreurs.js          refus de conformité (code, message, contexte)
+  baremes/
+    bareme-nc.json    barème du tarif — données séparées du code, à remplacer
   domain/
     controles.js      règles de conformité — le cœur du dispositif
     ecritures.js      cycle brouillon → comptabilisation → contre-passation
     dossiers.js       dossiers et comptes clients individualisés
+    bareme.js         moteur de liquidation du tarif (aucun chiffre en dur)
+    tarif.js          taxe des actes : projet → arrêté → comptabilisation
     rapprochement.js  rapprochement bancaire
     lettrage.js       lettrage des comptes de tiers
     cloture.js        exercices, pré-clôture, à-nouveaux
@@ -108,7 +126,7 @@ src/
     fec.js            export FEC et CSV
   server.js           API HTTP et service des fichiers statiques
 public/               interface (HTML/CSS/JS, sans framework)
-test/                 21 tests de conformité
+test/                 49 tests de conformité
 ```
 
 ## Exploitation
@@ -118,14 +136,23 @@ test/                 21 tests de conformité
 - Le serveur n'écoute que sur `127.0.0.1`. Pour le partager dans l'étude :
   `HOTE=0.0.0.0 PORT=7420 npm start`, derrière un reverse proxy TLS, sur le réseau
   interne uniquement.
+- Le barème du tarif est le fichier `src/baremes/bareme-nc.json`. Pour en utiliser un
+  autre : `COMPTA_BAREME=/chemin/vers/bareme.json npm start`. Un fichier modifié est
+  repris sans redémarrage, et chaque taxe conserve l'empreinte de celui qui l'a produite.
 - Les mots de passe sont dérivés par PBKDF2-SHA512 (210 000 itérations).
   Les sessions durent 12 heures.
 - Changez le mot de passe initial dès la première connexion.
 
 ## Limites
 
-Périmètre : noyau comptable. Ne sont pas couverts le tarif réglementé et le calcul
-des émoluments, les déclarations fiscales, la paie, la gestion des actes et
+**Le barème du tarif livré est fictif.** Le moteur de calcul de la taxe des actes est en
+place, mais les taux et tranches de `src/baremes/bareme-nc.json` sont inventés pour les
+besoins des tests. Ils doivent être remplacés par ceux du décret n° 78-321/CG du
+26 septembre 1978 et la correspondance validée par la Chambre. Tant que ce n'est pas fait,
+l'application le signale comme une anomalie critique et aucune taxe qu'elle produit n'a de
+valeur.
+
+Ne sont pas couverts les déclarations fiscales, la paie, la gestion des actes et
 l'archivage à valeur probante. Voir la section correspondante de
 [CONFORMITE.md](CONFORMITE.md), ainsi que les points à arbitrer avec la Chambre
 avant toute mise en production.

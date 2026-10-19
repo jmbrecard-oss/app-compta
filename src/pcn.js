@@ -139,3 +139,23 @@ export const TAUX_TGC = [
   { code: 'TGC11', libelle: 'Taux general 11 %', taux_millieme: 110 },
   { code: 'TGC22', libelle: 'Taux superieur 22 %', taux_millieme: 220 },
 ];
+
+/**
+ * Comptes d'emoluments et d'honoraires.
+ *
+ * Toute ecriture les mouvementant se rattache a un dossier : l'article 2 de
+ * l'arrete du 27 janvier 2006 soumet la taxe des actes a l'examen de
+ * conformite, ce qui suppose de pouvoir remonter de chaque produit a l'acte
+ * qui l'a genere.
+ */
+export const COMPTES_EMOLUMENTS = ['706100', '706200', '706300', '706400'];
+
+/**
+ * Comptes de tiers portant les sommes encaissees pour le compte d'autrui et
+ * destinees a etre reversees (Tresor, conservation des hypotheques, divers).
+ * Meme exigence de rattachement au dossier.
+ */
+export const COMPTES_DEBOURS_TIERS = ['448600', '448700', '448800'];
+
+/** Compte de TGC collectee sur les emoluments. */
+export const COMPTE_TGC_COLLECTEE = '445700';

@@ -5,12 +5,13 @@ import { join, extname, normalize } from 'node:path';
 import { ouvrirBase, un, tous, RACINE } from './db.js';
 import { initialiser } from './init.js';
 import { connecter, deconnecter, utilisateurDuJeton, exigerDroit, listerUtilisateurs, creerUtilisateur } from './auth.js';
-import { ErreurConformite, anomalies, etatRepresentationFonds } from './domain/controles.js';
+import { ErreurConformite, anomalies, etatRepresentationFonds, etatDeboursAReverser } from './domain/controles.js';
 import * as Ecritures from './domain/ecritures.js';
 import * as Dossiers from './domain/dossiers.js';
 import * as Rapprochement from './domain/rapprochement.js';
 import * as Lettrage from './domain/lettrage.js';
 import * as Cloture from './domain/cloture.js';
+import * as Tarif from './domain/tarif.js';
 import * as Etats from './reports/etats.js';
 import { genererFEC, nomFichierFEC, versCSV } from './reports/fec.js';
 import { verifierChaineAudit, journalAudit } from './audit.js';
@@ -164,6 +165,35 @@ route('POST', '/api/ecritures/:id/valider', 'valider', async ({ params, utilisat
 route('POST', '/api/ecritures/:id/contrepasser', 'contrepasser', async ({ params, corps, utilisateur }) =>
   Ecritures.contrepasser(Number(params.id), corps, utilisateur));
 
+// ----------------------------------------------------------- taxe des actes
+
+route('GET', '/api/tarif/bareme', 'lire', async () => {
+  const b = Tarif.baremeCourant();
+  return {
+    ...b.meta,
+    arrondi: b.arrondi,
+    empreinte: b.empreinte,
+    fichier: b.origine,
+    fictif: Tarif.baremeFictif(b),
+    prestations: b.prestations,
+  };
+});
+
+route('POST', '/api/tarif/simulation', 'lire', async ({ corps }) => Tarif.simulerTaxe(corps));
+
+route('GET', '/api/taxes', 'lire', async ({ query }) => Tarif.listerTaxes({
+  ...query,
+  dossier_id: query.dossier_id ? Number(query.dossier_id) : undefined,
+}));
+route('POST', '/api/taxes', 'saisir', async ({ corps, utilisateur }) => Tarif.creerTaxe(corps, utilisateur));
+route('GET', '/api/taxes/:id', 'lire', async ({ params }) => Tarif.lireTaxe(Number(params.id)));
+route('DELETE', '/api/taxes/:id', 'saisir', async ({ params, utilisateur }) =>
+  Tarif.supprimerTaxe(Number(params.id), utilisateur));
+route('POST', '/api/taxes/:id/arreter', 'valider', async ({ params, utilisateur }) =>
+  Tarif.arreterTaxe(Number(params.id), utilisateur));
+route('POST', '/api/taxes/:id/comptabiliser', 'valider', async ({ params, corps, utilisateur }) =>
+  Tarif.comptabiliserTaxe(Number(params.id), utilisateur, corps));
+
 // --------------------------------------------------------------------- lettrage
 
 route('GET', '/api/comptes/:numero/non-lettrees', 'lire', async ({ params }) =>
@@ -204,6 +234,12 @@ route('GET', '/api/etats/resultat', 'lire', async ({ query }) => Etats.compteDeR
 route('GET', '/api/etats/bilan', 'lire', async ({ query }) => Etats.bilan(query));
 route('GET', '/api/etats/comptes-clients', 'lire', async () => Etats.etatComptesClients());
 route('GET', '/api/etats/representation-fonds', 'lire', async () => etatRepresentationFonds());
+route('GET', '/api/etats/taxes', 'lire', async ({ query }) => Etats.etatTaxes({
+  dossier_id: query.dossier_id ? Number(query.dossier_id) : undefined,
+}));
+route('GET', '/api/etats/compte-definitif/:id', 'lire', async ({ params }) =>
+  Etats.compteDefinitif(Number(params.id)));
+route('GET', '/api/etats/debours-a-reverser', 'lire', async () => etatDeboursAReverser());
 route('GET', '/api/etats/inspection', 'lire', async ({ query }) => Etats.dossierInspection(query));
 
 // --------------------------------------------------------- controles et audit
@@ -257,6 +293,21 @@ route('GET', '/api/export/comptes-clients.csv', 'lire', async ({ res }) => {
     { titre: 'Fonds detenus (XPF)', valeur: 'fonds_detenus' },
   ]);
   texteBrut(res, 'comptes-clients.csv', contenu, 'text/csv; charset=utf-8');
+  return null;
+});
+
+route('GET', '/api/export/compte-definitif/:id', 'lire', async ({ params, res }) => {
+  const c = Etats.compteDefinitif(Number(params.id));
+  if (!c) return null;
+  const contenu = versCSV(c.mouvements, [
+    { titre: 'Date', valeur: 'date_ecriture' },
+    { titre: 'Journal', valeur: 'journal' },
+    { titre: 'Piece', valeur: 'piece_ref' },
+    { titre: 'Libelle', valeur: 'libelle' },
+    { titre: 'Verse par le client (XPF)', valeur: 'credit' },
+    { titre: 'Impute au dossier (XPF)', valeur: 'debit' },
+  ]);
+  texteBrut(res, `compte-definitif-${c.dossier.reference}.csv`, contenu, 'text/csv; charset=utf-8');
   return null;
 });
 

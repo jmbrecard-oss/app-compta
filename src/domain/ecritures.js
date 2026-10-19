@@ -11,6 +11,7 @@ import {
   controleSoldeClients,
   controleRepresentationFonds,
   controleEtancheite,
+  controleRattachementActe,
 } from './controles.js';
 
 const EST_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -160,6 +161,7 @@ export function valider(id, utilisateur) {
     controleEquilibre(lignes);
     controleComptes(lignes);
     controleEtancheite(lignes);
+    controleRattachementActe(lignes, e);
     const exercice = controleExercice(e.date_ecriture);
     controleChronologie(e.journal, exercice.id, e.date_ecriture);
 

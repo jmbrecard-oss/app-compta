@@ -1,0 +1,361 @@
+process.env.COMPTA_DB = ':memory:';
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { ouvrirBase, un, exec } from '../src/db.js';
+import { initialiser } from '../src/init.js';
+import { creerBrouillon, valider } from '../src/domain/ecritures.js';
+import { ouvrirDossier } from '../src/domain/dossiers.js';
+import { anomalies } from '../src/domain/controles.js';
+import { verifierChaineEcritures } from '../src/domain/ecritures.js';
+import { verifierChaineAudit } from '../src/audit.js';
+import {
+  validerBareme,
+  chargerBareme,
+  baremeCourant,
+  calculerPrestation,
+  simulerTaxe,
+  creerTaxe,
+  arreterTaxe,
+  comptabiliserTaxe,
+  lireTaxe,
+  listerTaxes,
+  supprimerTaxe,
+} from '../src/domain/tarif.js';
+import { compteDefinitif, etatTaxes } from '../src/reports/etats.js';
+
+const ICI = dirname(fileURLToPath(import.meta.url));
+const ANNEE = new Date().getFullYear();
+const LE = (mmjj) => `${ANNEE}-${mmjj}`;
+const notaire = { identifiant: 'notaire', role: 'NOTAIRE' };
+
+ouvrirBase();
+initialiser({ denomination: 'Office de test', ridet: '1234567', motDePasse: 'motdepasse-test', annee: ANNEE });
+
+const provisionne = ouvrirDossier({ reference: 'T-001', intitule: 'VENTE MARTIN' }, notaire);
+const demuni = ouvrirDossier({ reference: 'T-002', intitule: 'VENTE SANS PROVISION' }, notaire);
+
+const comptabiliser = (saisie) => valider(creerBrouillon(saisie, notaire).id, notaire).id;
+
+const refuse = (code, fn) => {
+  try {
+    fn();
+    assert.fail(`attendu un refus ${code}`);
+  } catch (e) {
+    assert.equal(e.code, code, `code attendu ${code}, obtenu ${e.code} (${e.message})`);
+  }
+};
+
+/** Provision recue du client : prealable a toute taxe. */
+comptabiliser({
+  journal: 'BQC', date_ecriture: LE('02-01'), piece_ref: 'P-1', libelle: 'Provision MARTIN',
+  lignes: [
+    { compte: '512500', libelle: 'Virement recu', debit: 5_000_000 },
+    { compte: provisionne.compte_client, libelle: 'Provision', credit: 5_000_000 },
+  ],
+});
+
+// ===========================================================  le barème lui-même
+
+test('le bareme livre se declare fictif et designe le texte qui doit le remplacer', () => {
+  const b = baremeCourant();
+  assert.equal(b.meta.statut, 'FICTIF');
+  assert.match(b.meta.texte_reference, /78-321\/CG/);
+  assert.match(b.meta.a_valider_par, /Chambre des notaires/);
+  assert.ok(b.meta.avertissement.length > 100, 'l avertissement doit etre explicite');
+  assert.equal(b.empreinte.length, 64, 'le bareme porte une empreinte SHA-256');
+});
+
+test('un bareme dont les tranches ne sont pas croissantes est refuse', () => {
+  refuse('BAREME_INVALIDE', () => validerBareme({
+    bareme: { code: 'X', libelle: 'x', statut: 'FICTIF', avertissement: 'x', texte_reference: 'x', a_valider_par: 'x' },
+    arrondi: 'SUPERIEUR',
+    prestations: [{
+      code: 'A', libelle: 'a', categorie: 'EMOLUMENT', compte: '706100', mode: 'TRANCHES',
+      tranches: [{ jusqu_a: 3_000_000, taux_ppm: 10 }, { jusqu_a: 1_000_000, taux_ppm: 20 }, { jusqu_a: null, taux_ppm: 5 }],
+    }],
+  }));
+});
+
+test('un bareme dont la derniere tranche est bornee est refuse', () => {
+  refuse('BAREME_INVALIDE', () => validerBareme({
+    bareme: { code: 'X', libelle: 'x', statut: 'FICTIF', avertissement: 'x', texte_reference: 'x', a_valider_par: 'x' },
+    arrondi: 'SUPERIEUR',
+    prestations: [{
+      code: 'A', libelle: 'a', categorie: 'EMOLUMENT', compte: '706100', mode: 'TRANCHES',
+      tranches: [{ jusqu_a: 1_000_000, taux_ppm: 10 }],
+    }],
+  }));
+});
+
+test('un taux non entier est refuse : aucun flottant n entre dans le bareme', () => {
+  refuse('BAREME_INVALIDE', () => validerBareme({
+    bareme: { code: 'X', libelle: 'x', statut: 'FICTIF', avertissement: 'x', texte_reference: 'x', a_valider_par: 'x' },
+    arrondi: 'SUPERIEUR',
+    prestations: [{
+      code: 'A', libelle: 'a', categorie: 'EMOLUMENT', compte: '706100', mode: 'PROPORTIONNEL', taux_ppm: 40.5,
+    }],
+  }));
+});
+
+// =============================================================  le calcul
+
+test('l emolument proportionnel est liquide tranche par tranche', () => {
+  // 1 000 000 a 4 % + 2 000 000 a 2 % + 7 000 000 a 1,2 % + 15 000 000 a 0,8 %
+  const l = calculerPrestation({ code: 'EMO-VENTE', assiette: 25_000_000 });
+  assert.equal(l.montant, 284_000);
+  assert.match(l.detail, /1 000 000/);
+  assert.equal(l.compte, '706100');
+});
+
+test('l arrondi n intervient qu une fois, sur le total de la prestation, et il est parametrable', () => {
+  // 1 000 000 a 4 % = 40 000 pile ; 234 567 a 2 % = 4 691,34 -> total 44 691,34.
+  const haut = calculerPrestation({ code: 'EMO-VENTE', assiette: 1_234_567 });
+  assert.equal(haut.montant, 44_692, 'arrondi SUPERIEUR du bareme livre');
+
+  const autre = chargerBareme(join(ICI, 'bareme-arrondi-inferieur.json'));
+  assert.equal(autre.arrondi, 'INFERIEUR');
+  const bas = calculerPrestation({ code: 'EMO-VENTE', assiette: 1_234_567 }, autre);
+  assert.equal(bas.montant, 44_691, 'le mode d arrondi vient du fichier de bareme, pas du code');
+});
+
+test('la justification de la liquidation est exacte au centieme, sans flottant', () => {
+  const l = calculerPrestation({ code: 'EMO-VENTE', assiette: 1_234_567 });
+  assert.match(l.detail, /44 691,34 arrondi/, 'la liquidation exacte precede l arrondi');
+  assert.match(l.detail, /= 44 692 XPF$/);
+});
+
+test('le minimum du bareme s applique quand la liquidation lui est inferieure', () => {
+  // 100 000 a 4 % = 4 000, en dessous du minimum de 20 000.
+  const l = calculerPrestation({ code: 'EMO-VENTE', assiette: 100_000 });
+  assert.equal(l.montant, 20_000);
+  assert.match(l.detail, /minimum/i);
+});
+
+test('une assiette non entiere, negative ou nulle est refusee', () => {
+  refuse('ASSIETTE_INVALIDE', () => calculerPrestation({ code: 'EMO-VENTE', assiette: 1_000_000.5 }));
+  refuse('ASSIETTE_INVALIDE', () => calculerPrestation({ code: 'EMO-VENTE', assiette: -1 }));
+  // Sans assiette, le minimum du bareme serait facture sur un champ vide.
+  refuse('ASSIETTE_INVALIDE', () => calculerPrestation({ code: 'EMO-VENTE', assiette: 0 }));
+});
+
+test('une prestation absente du bareme est refusee', () => {
+  refuse('PRESTATION_INCONNUE', () => calculerPrestation({ code: 'EMO-INVENTE', assiette: 1000 }));
+});
+
+test('la TGC est liquidee sur les emoluments et jamais sur les debours', () => {
+  const emolument = calculerPrestation({ code: 'EMO-VENTE', assiette: 25_000_000 });
+  assert.equal(emolument.tgc_code, 'TGC11');
+  assert.equal(emolument.tgc_montant, 31_240); // 284 000 x 11 %
+
+  const droits = calculerPrestation({ code: 'DROIT-ENREGISTREMENT', assiette: 25_000_000 });
+  assert.equal(droits.montant, 1_000_000);
+  assert.equal(droits.tgc_code, 'TGC0');
+  assert.equal(droits.tgc_montant, 0);
+  assert.equal(droits.compte, '448600');
+});
+
+// ================================================  la taxe de l'acte, piece a piece
+
+const PRESTATIONS_VENTE = [
+  { code: 'EMO-VENTE', assiette: 25_000_000 },
+  { code: 'EMO-FORMALITE', quantite: 3 },
+  { code: 'DROIT-ENREGISTREMENT', assiette: 25_000_000 },
+  { code: 'TAXE-HYPOTHECAIRE', assiette: 25_000_000 },
+];
+
+test('la taxe totalise emoluments, TGC et debours separement', () => {
+  const t = simulerTaxe({ acte: 'Vente MARTIN', date_acte: LE('03-01'), prestations: PRESTATIONS_VENTE });
+  assert.equal(t.total_emoluments, 320_000);   // 284 000 + 3 x 12 000
+  assert.equal(t.total_tgc, 35_200);           // 31 240 + 3 960
+  assert.equal(t.total_debours, 1_150_000);    // 1 000 000 + 150 000
+  assert.equal(t.total_du, 1_505_200);
+  assert.equal(t.total_du, t.total_emoluments + t.total_tgc + t.total_debours);
+});
+
+let taxe;
+
+test('une taxe arretee porte l empreinte du bareme qui l a produite', () => {
+  taxe = creerTaxe(
+    { dossier_id: provisionne.id, acte: 'Vente MARTIN', date_acte: LE('03-01'), prestations: PRESTATIONS_VENTE },
+    notaire,
+  );
+  assert.equal(taxe.statut, 'PROJET');
+  assert.equal(taxe.total_du, 1_505_200);
+
+  const arretee = arreterTaxe(taxe.id, notaire);
+  assert.equal(arretee.statut, 'ARRETEE');
+  assert.equal(arretee.bareme_empreinte, baremeCourant().empreinte);
+  assert.equal(arretee.bareme_statut, 'FICTIF');
+});
+
+test('une taxe dont une ligne a ete retouchee ne peut pas etre arretee', () => {
+  const t = creerTaxe(
+    { dossier_id: demuni.id, acte: 'Vente retouchee', date_acte: LE('03-02'), prestations: PRESTATIONS_VENTE },
+    notaire,
+  );
+  // Un projet est modifiable : on minore l emolument a la main.
+  exec(`UPDATE taxes_lignes SET montant = 1000 WHERE taxe_id = $t AND prestation_code = 'EMO-VENTE'`, { t: t.id });
+  refuse('TAXE_NON_CONFORME_BAREME', () => arreterTaxe(t.id, notaire));
+  assert.equal(lireTaxe(t.id).statut, 'PROJET');
+});
+
+test('la comptabilisation de la taxe produit l ecriture detaillee de l acte', () => {
+  const { ecriture } = comptabiliserTaxe(taxe.id, notaire);
+  const parCompte = Object.fromEntries(ecriture.lignes.map((l) => [l.compte, l]));
+
+  assert.equal(ecriture.journal, 'EMO');
+  assert.equal(parCompte[provisionne.compte_client].debit, 1_505_200);
+  assert.equal(parCompte['706100'].credit, 284_000);
+  assert.equal(parCompte['706200'].credit, 36_000);
+  assert.equal(parCompte['445700'].credit, 35_200);
+  assert.equal(parCompte['448600'].credit, 1_000_000);
+  assert.equal(parCompte['448700'].credit, 150_000);
+  assert.equal(ecriture.total_debit, ecriture.total_credit);
+  // Chaque ligne reste rattachee au dossier : la taxe est tracable a l acte.
+  for (const l of ecriture.lignes) assert.equal(l.dossier_id, provisionne.id);
+
+  assert.equal(lireTaxe(taxe.id).statut, 'COMPTABILISEE');
+});
+
+test('une taxe deja comptabilisee ne peut pas l etre deux fois', () => {
+  refuse('TAXE_DEJA_COMPTABILISEE', () => comptabiliserTaxe(taxe.id, notaire));
+});
+
+test('une taxe comptabilisee est verrouillee dans la base', () => {
+  assert.throws(
+    () => exec('UPDATE taxes SET total_du = 1 WHERE id = $id', { id: taxe.id }),
+    /INALTERABILITE/,
+  );
+  assert.throws(() => exec('DELETE FROM taxes WHERE id = $id', { id: taxe.id }), /INALTERABILITE/);
+  assert.throws(
+    () => exec('UPDATE taxes_lignes SET montant = 0 WHERE taxe_id = $id', { id: taxe.id }),
+    /INALTERABILITE/,
+  );
+});
+
+test('une taxe de montant nul ne peut pas etre comptabilisee', () => {
+  const t = creerTaxe(
+    { dossier_id: demuni.id, acte: 'Acte sans cout', date_acte: LE('03-03'),
+      prestations: [{ code: 'DEBOURS', montant: 0 }] },
+    notaire,
+  );
+  arreterTaxe(t.id, notaire);
+  refuse('TAXE_SANS_MONTANT', () => comptabiliserTaxe(t.id, notaire));
+});
+
+test('la taxe d un dossier sans provision est refusee : l office n avance pas les droits', () => {
+  const t = creerTaxe(
+    { dossier_id: demuni.id, acte: 'Vente sans provision', date_acte: LE('03-03'), prestations: PRESTATIONS_VENTE },
+    notaire,
+  );
+  arreterTaxe(t.id, notaire);
+  refuse('SOLDE_CLIENT_DEBITEUR', () => comptabiliserTaxe(t.id, notaire));
+  // L echec laisse la taxe arretee et ne cree aucune ecriture.
+  assert.equal(lireTaxe(t.id).statut, 'ARRETEE');
+  assert.equal(un('SELECT solde FROM v_soldes_dossiers WHERE id = $id', { id: demuni.id }).solde, 0);
+});
+
+// ==============================  le nouveau controle sur les ecritures manuelles
+
+test('un emolument comptabilise hors dossier est refuse', () => {
+  const b = creerBrouillon({
+    journal: 'EMO', date_ecriture: LE('03-04'), libelle: 'Emolument encaisse hors dossier',
+    lignes: [
+      { compte: '512100', libelle: 'Compte office', debit: 100_000 },
+      { compte: '706100', libelle: 'Emoluments', credit: 100_000 },
+    ],
+  }, notaire);
+  refuse('EMOLUMENT_HORS_DOSSIER', () => valider(b.id, notaire));
+});
+
+test('un debours a reverser au Tresor comptabilise hors dossier est refuse', () => {
+  const b = creerBrouillon({
+    journal: 'OD', date_ecriture: LE('03-05'), libelle: 'Droits d enregistrement sans dossier',
+    lignes: [
+      { compte: '471000', libelle: 'Attente', debit: 200_000 },
+      { compte: '448600', libelle: 'Droits a reverser', credit: 200_000 },
+    ],
+  }, notaire);
+  refuse('DEBOURS_HORS_DOSSIER', () => valider(b.id, notaire));
+});
+
+test('le reversement des droits au Tresor reste possible, rattache au dossier', () => {
+  const id = comptabiliser({
+    journal: 'BQC', date_ecriture: LE('03-06'), libelle: 'Reversement des droits MARTIN',
+    lignes: [
+      { compte: '448600', dossier_id: provisionne.id, libelle: 'Droits reverses', debit: 1_000_000 },
+      { compte: '512500', libelle: 'Depuis le compte de depot', credit: 1_000_000 },
+    ],
+  });
+  assert.equal(un('SELECT statut FROM ecritures WHERE id = $id', { id }).statut, 'VALIDEE');
+});
+
+// ======================================================  restitution et alerte
+
+test('le compte definitif du dossier recapitule provisions, emoluments et debours', () => {
+  const c = compteDefinitif(provisionne.id);
+  assert.equal(c.recu, 5_000_000);
+  assert.equal(c.total_taxe, 1_505_200);
+  assert.equal(c.detail.emoluments, 320_000);
+  assert.equal(c.detail.tgc, 35_200);
+  assert.equal(c.detail.debours, 1_150_000);
+  assert.equal(c.solde_detenu, 3_494_800);
+  assert.equal(c.taxes.length, 1);
+  assert.ok(c.bareme_fictif, 'le compte definitif porte la mention du bareme non valide');
+});
+
+test('l etat des taxes signale celles qui restent a comptabiliser', () => {
+  const e = etatTaxes();
+  assert.ok(e.a_comptabiliser.some((t) => t.dossier_id === demuni.id));
+  assert.equal(e.comptabilisees.length, 1);
+});
+
+test('tant que le bareme est fictif, une anomalie critique remonte', () => {
+  const a = anomalies().find((x) => x.code === 'BAREME_NON_VALIDE');
+  assert.ok(a, 'le tableau de bord doit porter l alerte');
+  assert.equal(a.gravite, 'CRITIQUE');
+});
+
+test('un projet supprime ne consomme pas de reference, une taxe arretee si', () => {
+  const projet = creerTaxe(
+    { dossier_id: demuni.id, acte: 'Projet jetable', date_acte: LE('03-07'),
+      prestations: [{ code: 'DEBOURS', montant: 1000 }] },
+    notaire,
+  );
+  supprimerTaxe(projet.id, notaire);
+  const suivante = creerTaxe(
+    { dossier_id: demuni.id, acte: 'Projet suivant', date_acte: LE('03-07'),
+      prestations: [{ code: 'DEBOURS', montant: 1000 }] },
+    notaire,
+  );
+  // Meme regle que pour les brouillons d'ecritures : un projet abandonne ne
+  // laisse pas de trou dans la numerotation.
+  assert.equal(suivante.reference, projet.reference);
+
+  // Une fois arretee, la taxe n'est plus supprimable : sa reference est figee.
+  arreterTaxe(suivante.id, notaire);
+  refuse('TAXE_NON_SUPPRIMABLE', () => supprimerTaxe(suivante.id, notaire));
+});
+
+test('une comptabilisation refusee ne laisse ni ecriture ni trou dans les chaines', () => {
+  // Les taxes refusees plus haut ont cree puis annule brouillons et traces
+  // d'audit dans leur transaction : les deux chaines doivent rester intactes.
+  const ecritures = verifierChaineEcritures();
+  assert.ok(ecritures.valide, ecritures.motif);
+  assert.ok(verifierChaineAudit().valide);
+  // La comptabilisation d'une taxe est atomique : son refus ne doit laisser
+  // aucun brouillon derriere lui, contrairement a une saisie manuelle refusee,
+  // qui reste en brouillon avec son motif.
+  assert.equal(un(`SELECT COUNT(*) AS n FROM ecritures WHERE statut = 'BROUILLON' AND piece_ref LIKE 'TX-%'`).n, 0);
+  assert.equal(un(`SELECT COUNT(*) AS n FROM taxes WHERE statut = 'COMPTABILISEE' AND ecriture_id IS NULL`).n, 0);
+});
+
+test('les taxes figurent au dossier d inspection avec leur bareme', () => {
+  const liste = listerTaxes({ dossier_id: provisionne.id });
+  assert.equal(liste.length, 1);
+  assert.equal(liste[0].bareme_code, 'NC-DEMO-1');
+});

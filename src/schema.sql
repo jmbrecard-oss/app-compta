@@ -149,6 +149,54 @@ CREATE INDEX IF NOT EXISTS idx_lig_ecr     ON lignes(ecriture_id);
 CREATE INDEX IF NOT EXISTS idx_lig_compte  ON lignes(compte);
 CREATE INDEX IF NOT EXISTS idx_lig_dossier ON lignes(dossier_id);
 
+-- ---------------------------------------------------- taxe des actes --
+-- Liquidation du tarif : emoluments, debours et taxes dus pour un acte.
+-- Une taxe nait en PROJET (modifiable), est ARRETEE (figee, recalculee et
+-- confrontee au bareme) puis COMPTABILISEE (une ecriture lui est attachee).
+-- bareme_empreinte conserve le SHA-256 du fichier de bareme utilise : une
+-- taxe reste verifiable meme apres remplacement du bareme.
+CREATE TABLE IF NOT EXISTS taxes (
+  id               INTEGER PRIMARY KEY,
+  reference        TEXT NOT NULL UNIQUE,
+  dossier_id       INTEGER NOT NULL REFERENCES dossiers(id),
+  acte             TEXT NOT NULL,
+  date_acte        TEXT NOT NULL,                  -- AAAA-MM-JJ
+  bareme_code      TEXT NOT NULL,
+  bareme_statut    TEXT NOT NULL,                  -- FICTIF tant que la Chambre n a rien valide
+  bareme_empreinte TEXT NOT NULL,
+  total_emoluments INTEGER NOT NULL DEFAULT 0 CHECK (total_emoluments >= 0),
+  total_debours    INTEGER NOT NULL DEFAULT 0 CHECK (total_debours    >= 0),
+  total_tgc        INTEGER NOT NULL DEFAULT 0 CHECK (total_tgc        >= 0),
+  total_du         INTEGER NOT NULL DEFAULT 0 CHECK (total_du         >= 0),
+  statut           TEXT NOT NULL DEFAULT 'PROJET'
+                     CHECK (statut IN ('PROJET','ARRETEE','COMPTABILISEE')),
+  ecriture_id      INTEGER REFERENCES ecritures(id),
+  cree_le          TEXT NOT NULL,
+  cree_par         TEXT NOT NULL,
+  arrete_le        TEXT,
+  arrete_par       TEXT,
+  CHECK (total_du = total_emoluments + total_debours + total_tgc)
+);
+CREATE INDEX IF NOT EXISTS idx_taxes_dossier ON taxes(dossier_id);
+CREATE INDEX IF NOT EXISTS idx_taxes_statut  ON taxes(statut);
+
+CREATE TABLE IF NOT EXISTS taxes_lignes (
+  id              INTEGER PRIMARY KEY,
+  taxe_id         INTEGER NOT NULL REFERENCES taxes(id) ON DELETE CASCADE,
+  ordre           INTEGER NOT NULL,
+  prestation_code TEXT NOT NULL,
+  libelle         TEXT NOT NULL,
+  categorie       TEXT NOT NULL CHECK (categorie IN ('EMOLUMENT','DEBOURS','TAXE')),
+  compte          TEXT NOT NULL REFERENCES comptes(numero),
+  assiette        INTEGER NOT NULL DEFAULT 0 CHECK (assiette >= 0),
+  quantite        INTEGER NOT NULL DEFAULT 1 CHECK (quantite >= 1),
+  montant         INTEGER NOT NULL CHECK (montant >= 0),
+  tgc_code        TEXT NOT NULL DEFAULT 'TGC0',
+  tgc_montant     INTEGER NOT NULL DEFAULT 0 CHECK (tgc_montant >= 0),
+  detail          TEXT NOT NULL DEFAULT ''        -- liquidation tranche par tranche
+);
+CREATE INDEX IF NOT EXISTS idx_taxes_lignes_taxe ON taxes_lignes(taxe_id);
+
 -- ------------------------------------------------------- rapprochements --
 CREATE TABLE IF NOT EXISTS rapprochements (
   id           INTEGER PRIMARY KEY,
@@ -232,6 +280,48 @@ CREATE TRIGGER IF NOT EXISTS trg_audit_immuable_suppr
 BEFORE DELETE ON audit
 BEGIN
   SELECT RAISE(ABORT, 'INALTERABILITE: le journal d''audit est en ajout seul');
+END;
+
+-- Une taxe arretee est figee : elle a servi de base a une ecriture et a un
+-- compte remis au client. Seuls le passage a COMPTABILISEE et le rattachement
+-- de l'ecriture restent possibles.
+CREATE TRIGGER IF NOT EXISTS trg_taxe_maj_interdite
+BEFORE UPDATE ON taxes
+WHEN OLD.statut IN ('ARRETEE','COMPTABILISEE')
+ AND (NEW.reference        <> OLD.reference
+   OR NEW.dossier_id       <> OLD.dossier_id
+   OR NEW.acte             <> OLD.acte
+   OR NEW.date_acte        <> OLD.date_acte
+   OR NEW.bareme_code      <> OLD.bareme_code
+   OR NEW.bareme_statut    <> OLD.bareme_statut
+   OR NEW.bareme_empreinte <> OLD.bareme_empreinte
+   OR NEW.total_emoluments <> OLD.total_emoluments
+   OR NEW.total_debours    <> OLD.total_debours
+   OR NEW.total_tgc        <> OLD.total_tgc
+   OR NEW.total_du         <> OLD.total_du)
+BEGIN
+  SELECT RAISE(ABORT, 'INALTERABILITE: taxe arretee, modification interdite (contre-passation de l''ecriture et nouvelle taxe)');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_taxe_suppr_interdite
+BEFORE DELETE ON taxes
+WHEN OLD.statut <> 'PROJET'
+BEGIN
+  SELECT RAISE(ABORT, 'INALTERABILITE: taxe arretee, suppression interdite');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_taxe_ligne_maj_interdite
+BEFORE UPDATE ON taxes_lignes
+WHEN (SELECT statut FROM taxes WHERE id = OLD.taxe_id) <> 'PROJET'
+BEGIN
+  SELECT RAISE(ABORT, 'INALTERABILITE: ligne d''une taxe arretee, modification interdite');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_taxe_ligne_suppr_interdite
+BEFORE DELETE ON taxes_lignes
+WHEN (SELECT statut FROM taxes WHERE id = OLD.taxe_id) <> 'PROJET'
+BEGIN
+  SELECT RAISE(ABORT, 'INALTERABILITE: ligne d''une taxe arretee, suppression interdite');
 END;
 
 -- ---------------------------------------------------------------- vues --
