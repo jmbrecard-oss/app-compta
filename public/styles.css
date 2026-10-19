@@ -213,3 +213,91 @@ details.bloc summary { cursor: pointer; font-weight: 600; }
 
 .vide { color: var(--texte-doux); font-style: italic; padding: 1rem 0; }
 .empreinte { font-family: var(--mono); font-size: .72rem; color: var(--texte-doux); word-break: break-all; }
+
+/* ------------------------------------------------------------ accessibilité */
+/* Le contour de focus doit rester visible partout : une partie du travail se
+   fait au clavier, et un contrôleur n'utilise pas forcément la souris. */
+:is(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.sr-seulement {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ caisse */
+dl.parametres {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: .6rem 1.2rem;
+  margin: .8rem 0 0;
+}
+dl.parametres dt { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--texte-doux); }
+dl.parametres dd { margin: .1rem 0 0; font-variant-numeric: tabular-nums; }
+tr.ligne-critique > td { background: var(--critique-fond); }
+tr.ligne-critique:hover > td { background: var(--critique-fond); }
+
+/* ------------------------------------------------------------- impression */
+/* Les états sont des pièces d'inspection : ils doivent sortir sur papier
+   lisibles, complets et paginés, sans la navigation de l'application. */
+@media print {
+  :root {
+    --fond: #fff; --surface: #fff; --surface-2: #fff;
+    --texte: #000; --texte-doux: #333; --bord: #999;
+    --accent: #000; --accent-clair: #fff;
+    --critique: #000; --critique-fond: #fff;
+    --majeure: #000; --majeure-fond: #fff;
+    --ok: #000; --ok-fond: #fff;
+  }
+  @page { margin: 14mm 12mm; }
+
+  body { background: #fff; color: #000; font-size: 10.5pt; }
+  #menu, .utilisateur, .message, .barre-outils, .sans-impression,
+  button, .ecran-connexion { display: none !important; }
+  main { padding: 0; max-width: none; }
+
+  /* L'identite de l'office tient lieu d'en-tete : un etat remis a un
+     controleur doit dire de quel office il sort. */
+  .bandeau {
+    display: block;
+    position: static;
+    padding: 0 0 2mm;
+    margin-bottom: 5mm;
+    border-bottom: 1pt solid #000;
+  }
+  .identite { display: block; }
+  .etiquette { border: 0; padding: 0; }
+  .identite strong::after { content: " — "; }
+
+  /* Pas d'ombre ni de cadre superflu : l'encre sert au contenu. */
+  .carte { border: 0; padding: 0; margin: 0 0 8mm; break-inside: auto; }
+  .carte + .carte { margin-top: 0; }
+  .saut-de-page { break-before: page; }
+  .grille { display: block; }
+  .grille > div { display: inline-block; margin: 0 10mm 3mm 0; vertical-align: top; }
+  .indicateur { font-size: 1.1rem; }
+
+  /* Sans cela, une colonne hors écran serait purement et simplement absente
+     de l'impression : un état tronqué ne vaut rien devant un contrôle. */
+  .defilant { overflow: visible !important; }
+  table { width: 100%; font-size: 9pt; break-inside: auto; }
+  /* En-têtes et pieds répétés sur chaque page. */
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tr { break-inside: avoid; }
+  th, td { padding: .15rem .3rem; }
+  tbody tr:hover { background: none; }
+
+  /* En noir et blanc, une pastille de couleur ne dit plus rien : on la borde. */
+  .pastille { border: 1px solid #000; padding: 0 .3rem; }
+  .pastille.minuscule { border-style: dotted; }
+  tr.ligne-critique > td { background: none; box-shadow: inset 3px 0 0 #000; font-weight: 600; }
+  .alerte { border: 1px solid #000; border-left-width: 3px; background: none; color: #000; }
+  .empreinte { font-size: 7.5pt; }
+  .vide { font-style: italic; }
+}

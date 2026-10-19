@@ -1,5 +1,6 @@
 import { un, tous } from '../db.js';
 import { etatRepresentationFonds, anomalies } from '../domain/controles.js';
+import { registreDesEspeces } from '../domain/especes.js';
 
 const bornes = (p = {}) => ({
   depuis: p.depuis ?? null,
@@ -172,6 +173,7 @@ export function dossierInspection(p = {}) {
     comptes_clients: etatComptesClients(),
     representation_fonds: etatRepresentationFonds(),
     anomalies: anomalies(),
+    registre_especes: registreDesEspeces(p),
     comptes_attente: tous(`SELECT * FROM v_soldes WHERE nature = 'ATTENTE'`),
     rapprochements: tous(
       `SELECT r.*, c.intitule FROM rapprochements r JOIN comptes c ON c.numero = r.compte

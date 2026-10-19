@@ -12,6 +12,7 @@ import {
   controleRepresentationFonds,
   controleEtancheite,
 } from './controles.js';
+import { controleEspeces, controleCumulEspecesDossier, controleCaisseNonCreditrice } from './especes.js';
 
 const EST_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -160,6 +161,7 @@ export function valider(id, utilisateur) {
     controleEquilibre(lignes);
     controleComptes(lignes);
     controleEtancheite(lignes);
+    const especes = controleEspeces(e, lignes);
     const exercice = controleExercice(e.date_ecriture);
     controleChronologie(e.journal, exercice.id, e.date_ecriture);
 
@@ -193,6 +195,10 @@ export function valider(id, utilisateur) {
       .map((c) => c.numero);
     controleSoldeClients(comptesClients);
     controleRepresentationFonds();
+    if (especes) {
+      controleCumulEspecesDossier(especes.dossiers);
+      controleCaisseNonCreditrice();
+    }
 
     tracer(
       utilisateur.identifiant, 'COMPTABILISATION', 'ecriture', id,
