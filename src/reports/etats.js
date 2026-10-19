@@ -1,5 +1,6 @@
 import { un, tous } from '../db.js';
 import { etatRepresentationFonds, anomalies } from '../domain/controles.js';
+import { etatSommesDues } from '../domain/debours.js';
 
 const bornes = (p = {}) => ({
   depuis: p.depuis ?? null,
@@ -171,6 +172,7 @@ export function dossierInspection(p = {}) {
     balance: balance(p),
     comptes_clients: etatComptesClients(),
     representation_fonds: etatRepresentationFonds(),
+    sommes_dues_tiers: etatSommesDues({ a_la_date: p.jusqu ?? null, jusqu: p.jusqu ?? null }),
     anomalies: anomalies(),
     comptes_attente: tous(`SELECT * FROM v_soldes WHERE nature = 'ATTENTE'`),
     rapprochements: tous(

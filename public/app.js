@@ -106,6 +106,7 @@ async function afficher(vue) {
 async function vueTableau() {
   const d = await api('/tableau-de-bord');
   const f = d.representation_fonds;
+  const t = d.representation_tiers;
   const critiques = d.anomalies.filter((a) => a.gravite === 'CRITIQUE');
 
   $('#contenu').innerHTML = `
@@ -116,6 +117,16 @@ async function vueTableau() {
         <p>Représentés par ${xpf(f.representation_totale)} XPF de disponibilités.</p>
         <span class="pastille ${f.conforme ? 'ok' : 'critique'}">
           ${f.conforme ? `Fonds représentés (marge ${xpf(f.ecart)} XPF)` : `Déficit de ${xpf(-f.ecart)} XPF`}
+        </span>
+      </div>
+      <div class="carte">
+        <div class="libelle-indicateur">Sommes dues aux tiers</div>
+        <div class="indicateur">${xpf(t.du_aux_tiers)} <small>XPF</small></div>
+        <p>Droits d'enregistrement, taxe hypothécaire et débours encaissés, non encore reversés.</p>
+        <span class="pastille ${t.conforme ? 'ok' : 'critique'}">
+          ${t.conforme
+            ? `Clients et tiers couverts (marge ${xpf(t.ecart)} XPF)`
+            : `Déficit de ${xpf(-t.ecart)} XPF`}
         </span>
       </div>
       <div class="carte">
@@ -192,6 +203,22 @@ const MODELES = [
       { compte: '', sens: 'debit', client: true },
       { compte: '706100', sens: 'credit' },
       { compte: '445700', sens: 'credit' },
+    ],
+  },
+  {
+    nom: 'Appel des droits d\'enregistrement sur le dossier',
+    journal: 'EMO',
+    lignes: [
+      { compte: '', sens: 'debit', client: true },
+      { compte: '448600', sens: 'credit' },
+    ],
+  },
+  {
+    nom: 'Reversement au Trésor des droits appelés',
+    journal: 'BQC',
+    lignes: [
+      { compte: '448600', sens: 'debit' },
+      { compte: '512500', sens: 'credit' },
     ],
   },
   {
@@ -293,9 +320,14 @@ function ajouterLigne(modele = {}) {
     <td><button type="button" class="lien l-suppr">✕</button></td>`;
   $('#lignes').append(tr);
 
-  // Le choix d'un dossier impute automatiquement son compte client.
+  // Sur une ligne vide ou deja imputee a un client, le choix d'un dossier
+  // impute son compte client. Sur un autre compte - un debours a reverser au
+  // Tresor, par exemple - il designe seulement l'affaire qui supporte la
+  // somme : le compte, lui, ne change pas.
   $('.l-dossier', tr).addEventListener('change', (e) => {
-    if (e.target.value) $('.l-compte', tr).value = e.target.value;
+    const compte = $('.l-compte', tr).value;
+    const estClient = !compte || etat.comptes.find((c) => c.numero === compte)?.nature === 'CLIENT';
+    if (e.target.value && estClient) $('.l-compte', tr).value = e.target.value;
     recalculer();
   });
   // Debit et credit s'excluent sur une meme ligne.
@@ -317,12 +349,19 @@ function appliquerModele(index) {
 }
 
 function lireLignes() {
-  return $$('#lignes tr').map((tr) => ({
-    compte: $('.l-compte', tr).value,
-    libelle: $('.l-libelle', tr).value,
-    debit: Number($('.l-debit', tr).value || 0),
-    credit: Number($('.l-credit', tr).value || 0),
-  })).filter((l) => l.compte && (l.debit || l.credit));
+  return $$('#lignes tr').map((tr) => {
+    const compte = $('.l-compte', tr).value;
+    const dossier = etat.dossiers.find((d) => d.compte_client === $('.l-dossier', tr).value);
+    return {
+      compte,
+      // Le dossier n'est transmis que lorsqu'il ne se deduit pas du compte :
+      // c'est ainsi qu'un debours a reverser se rattache a son affaire.
+      dossier_id: dossier && dossier.compte_client !== compte ? dossier.id : undefined,
+      libelle: $('.l-libelle', tr).value,
+      debit: Number($('.l-debit', tr).value || 0),
+      credit: Number($('.l-credit', tr).value || 0),
+    };
+  }).filter((l) => l.compte && (l.debit || l.credit));
 }
 
 function recalculer() {
@@ -641,6 +680,7 @@ async function vueEtats() {
         <label>État <select id="choix-etat">
           <option value="balance">Balance générale</option>
           <option value="clients">État des comptes clients</option>
+          <option value="sommes-dues">Sommes dues aux tiers (débours)</option>
           <option value="resultat">Compte de résultat</option>
           <option value="bilan">Bilan</option>
           <option value="grand-livre">Grand livre</option>
@@ -654,6 +694,7 @@ async function vueEtats() {
         <a href="/api/export/fec" download><button type="button">Export FEC</button></a>
         <a href="/api/export/balance.csv" download><button type="button" class="secondaire">Balance CSV</button></a>
         <a href="/api/export/comptes-clients.csv" download><button type="button" class="secondaire">Clients CSV</button></a>
+        <a href="/api/export/sommes-dues.csv" download><button type="button" class="secondaire">Sommes dues CSV</button></a>
       </div>
       <div id="rendu-etat"></div>
     </div>`;
@@ -709,6 +750,13 @@ async function editerEtat() {
           </tbody>
           <tfoot><tr><th colspan="3">Total des fonds détenus</th><th class="nb">${xpf(e.total_fonds_detenus)}</th></tr></tfoot>
         </table></div>`;
+      break;
+    }
+    case 'sommes-dues': {
+      const q = new URLSearchParams(p);
+      if ($('#e-jusqu').value) q.set('a_la_date', $('#e-jusqu').value);
+      const e = await api(`/etats/sommes-dues?${q}`);
+      cible.innerHTML = rendreSommesDues(e);
       break;
     }
     case 'resultat': {
@@ -768,6 +816,68 @@ async function editerEtat() {
   }
 }
 
+/**
+ * Etat de controle des sommes dues aux tiers : ce qui a ete appele sur chaque
+ * dossier, ce qui a ete reverse, ce qui reste du et depuis quand.
+ */
+function rendreSommesDues(e) {
+  const c = e.couverture;
+  const tableCompte = (compte) => `
+    <h3>${echapper(compte.numero)} — ${echapper(compte.intitule ?? '')}</h3>
+    <p class="sous-titre">
+      Bénéficiaire : ${echapper(compte.beneficiaire)}.
+      ${compte.delai_reversement_jours === null
+        ? 'Aucun délai de reversement paramétré.'
+        : `Délai de reversement paramétré : ${compte.delai_reversement_jours} jours.`}
+    </p>
+    ${compte.dossiers.length ? `<div class="defilant"><table>
+      <thead><tr><th>Dossier</th><th>Intitulé</th><th class="nb">Appelé</th><th class="nb">Reversé</th>
+        <th class="nb">Reste dû</th><th>Plus ancien appel</th><th class="nb">Ancienneté</th></tr></thead>
+      <tbody>${compte.dossiers.map((d) => `
+        <tr>
+          <td>${echapper(d.reference ?? '')}</td>
+          <td>${echapper(d.intitule ?? '')}</td>
+          <td class="nb">${xpf(d.appele)}</td>
+          <td class="nb">${xpf(d.reverse)}</td>
+          <td class="nb">${xpf(d.reste_du)}</td>
+          <td>${dateFr(d.plus_ancien_appel)}</td>
+          <td class="nb">${d.anciennete_jours === null ? '' : `${d.anciennete_jours} j`}
+            ${d.delai_depasse ? '<span class="pastille critique">à reverser</span>' : ''}</td>
+        </tr>`).join('')}
+      </tbody>
+      <tfoot><tr><th colspan="4">Reste dû — ${echapper(compte.numero)}</th>
+        <th class="nb">${xpf(compte.total_du)}</th><th colspan="2"></th></tr></tfoot>
+    </table></div>` : '<p class="vide">Aucune somme due : tout a été reversé.</p>'}`;
+
+  return `
+    <div class="alerte ${c.conforme ? 'information' : ''}">
+      <strong>Sommes dues aux tiers au ${dateFr(e.arrete_le)} : ${xpf(e.total_du)} XPF</strong>
+      ${xpf(c.du_aux_clients)} XPF dus aux clients et ${xpf(c.du_aux_tiers)} XPF dus aux tiers,
+      pour ${xpf(c.representation_totale)} XPF de disponibilités —
+      ${c.conforme ? `marge de ${xpf(c.ecart)} XPF.` : `DÉFICIT de ${xpf(-c.ecart)} XPF.`}
+    </div>
+    ${e.parametrage.statut === 'VALIDE' ? '' : `
+      <div class="alerte">
+        <strong>Délais de reversement non validés</strong>
+        Paramétrage ${echapper(e.parametrage.code)} : la liste des comptes et les délais n'ont pas été
+        validés par la Chambre des notaires. Les signalements d'ancienneté sont indicatifs et sans
+        valeur réglementaire.
+      </div>`}
+    ${e.sans_dossier.length ? `
+      <div class="alerte">
+        <strong>Sommes dues sans dossier d'imputation</strong>
+        ${e.sans_dossier.map((d) => `${echapper(d.compte)} : ${xpf(d.reste_du)} XPF`).join(' — ')}.
+        Ces sommes ne sont rattachables à aucune affaire.
+      </div>` : ''}
+    ${e.dossiers_debiteurs.length ? `
+      <div class="alerte">
+        <strong>Reversements excédentaires</strong>
+        ${e.dossiers_debiteurs.map((d) => `${echapper(d.compte)} — ${echapper(d.reference ?? 'sans dossier')} :
+          ${xpf(d.excedent_reverse)} XPF`).join(' — ')}.
+      </div>` : ''}
+    ${e.comptes.map(tableCompte).join('')}`;
+}
+
 // ================================================================ inspection
 
 async function vueInspection() {
@@ -803,6 +913,11 @@ async function vueInspection() {
           ? `${chaine.audit.evenements} événements tracés, chaîne intègre.`
           : `Rupture à l'événement ${chaine.audit.rupture_id} : ${echapper(chaine.audit.motif)}`}
       </div>
+    </div>
+
+    <div class="carte" style="margin-top:1rem">
+      <h2>Sommes dues aux tiers</h2>
+      ${rendreSommesDues(d.sommes_dues_tiers)}
     </div>
 
     <div class="carte" style="margin-top:1rem">

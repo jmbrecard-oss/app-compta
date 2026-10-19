@@ -12,6 +12,7 @@ import {
   controleRepresentationFonds,
   controleEtancheite,
 } from './controles.js';
+import { estCompteDebours, controleDebours, controleReversementDebours, controleRepresentationTiers } from './debours.js';
 
 const EST_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -29,12 +30,26 @@ function normaliserLignes(lignes) {
   }));
 }
 
-/** Rattache automatiquement chaque ligne de compte client a son dossier. */
-function rattacherDossiers(lignes) {
+/**
+ * Rattache automatiquement chaque ligne a son dossier : par le compte client
+ * pour les comptes individualises, par heritage pour les comptes de debours,
+ * dont le numero ne porte pas le dossier. L'heritage ne joue que s'il est sans
+ * ambiguite : dossier porte par l'ecriture, ou dossier unique qu'elle
+ * mouvemente. A defaut, la ligne reste orpheline et la comptabilisation la
+ * refusera.
+ */
+function rattacherDossiers(lignes, dossierEcriture = null) {
   for (const l of lignes) {
     if (l.dossier_id) continue;
     const d = un('SELECT id FROM dossiers WHERE compte_client = $c', { c: l.compte });
     if (d) l.dossier_id = d.id;
+  }
+  const portes = new Set(lignes.map((l) => l.dossier_id).filter(Boolean));
+  const heritage = dossierEcriture ?? (portes.size === 1 ? [...portes][0] : null);
+  if (heritage) {
+    for (const l of lignes) {
+      if (!l.dossier_id && estCompteDebours(l.compte)) l.dossier_id = heritage;
+    }
   }
   return lignes;
 }
@@ -52,7 +67,7 @@ export function creerBrouillon(saisie, utilisateur) {
   if (!j) throw new ErreurConformite('JOURNAL_INCONNU', `Journal ${journal} inconnu ou desactive.`);
 
   const exercice = controleExercice(date_ecriture);
-  const lignes = rattacherDossiers(normaliserLignes(saisie.lignes));
+  const lignes = rattacherDossiers(normaliserLignes(saisie.lignes), saisie.dossier_id ?? null);
   controleMontantsEntiers(lignes);
   controleComptes(lignes);
 
@@ -97,7 +112,7 @@ export function modifierBrouillon(id, saisie, utilisateur) {
   if (e.statut !== 'BROUILLON') {
     throw new ErreurConformite('NON_MODIFIABLE', 'Ecriture comptabilisee : seule la contre-passation est possible.');
   }
-  const lignes = rattacherDossiers(normaliserLignes(saisie.lignes ?? []));
+  const lignes = rattacherDossiers(normaliserLignes(saisie.lignes ?? []), saisie.dossier_id ?? e.dossier_id ?? null);
   controleMontantsEntiers(lignes);
   controleComptes(lignes);
   const exercice = controleExercice(saisie.date_ecriture ?? e.date_ecriture);
@@ -160,6 +175,7 @@ export function valider(id, utilisateur) {
     controleEquilibre(lignes);
     controleComptes(lignes);
     controleEtancheite(lignes);
+    const debours = controleDebours(e, lignes);
     const exercice = controleExercice(e.date_ecriture);
     controleChronologie(e.journal, exercice.id, e.date_ecriture);
 
@@ -192,7 +208,9 @@ export function valider(id, utilisateur) {
       .filter((c) => c?.nature === 'CLIENT')
       .map((c) => c.numero);
     controleSoldeClients(comptesClients);
+    if (debours) controleReversementDebours(debours.couples);
     controleRepresentationFonds();
+    controleRepresentationTiers();
 
     tracer(
       utilisateur.identifiant, 'COMPTABILISATION', 'ecriture', id,

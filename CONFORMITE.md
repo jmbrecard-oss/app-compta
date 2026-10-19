@@ -151,6 +151,38 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
   anomalies, rapprochements, volumétrie, état de la chaîne, piste d'audit — sur un écran unique.
 - Exports CSV de la balance et de l'état des comptes clients.
 
+### 7. Sommes encaissées pour le compte de tiers
+
+Les droits d'enregistrement (448600), la taxe hypothécaire et le salaire du conservateur
+(448700) et les autres débours à reverser (448800) ne sont ni des produits de l'office, ni des
+fonds dont il dispose : ils transitent par lui. Le client les verse, l'office les détient, le
+Trésor les reçoit. Entre les deux, ils restent dus — et doivent pouvoir se justifier affaire
+par affaire.
+
+| Règle | Mise en œuvre | Preuve |
+|---|---|---|
+| Toute somme due à un tiers désigne le dossier qui l'a supportée | `controleDebours` : contrôle **bloquant**, ligne par ligne. Une ligne sur un compte de débours sans dossier est refusée ; l'écriture qui ne désigne qu'une seule affaire la lui fait hériter, celle qui en mêle plusieurs doit imputer ligne à ligne. Les à-nouveaux, qui reprennent un solde déjà justifié, en sont exemptés | tests « une somme due au Tresor doit designer le dossier qui l a supportee », « un debours imputable a deux dossiers a la fois est refuse », « l appel de droits sur un dossier unique rattache le debours a ce dossier » |
+| Un débours encaissé ne devient jamais un produit ni une charge de l'office | Une écriture qui **solde** un compte de débours par un compte de classe 6 ou 7 est refusée. Seul ce sens est interdit : l'acte qui appelle émoluments et droits en une seule écriture les crédite ensemble par le débit du compte du client, et reste régulier | tests « un debours encaisse pour un tiers ne peut pas devenir un produit de l office », « l appel d emoluments et de droits dans une meme ecriture reste regulier » |
+| On ne reverse pas plus que ce qui a été appelé | `controleReversementDebours`, exécuté **après insertion des lignes dans la transaction** : si le compte de débours devenait débiteur pour le dossier, l'écriture entière est annulée et reste en brouillon | test « on ne reverse pas au Tresor plus que ce qui a ete appele sur le dossier » |
+| Les sommes dues aux tiers sont représentées, au même titre que les fonds clients | `controleRepresentationTiers` : les disponibilités doivent couvrir **la somme** du dû aux clients et du dû aux tiers. Sans lui, un droit d'enregistrement appelé quitte le compte du client sans quitter le compte de dépôt : le seul contrôle des comptes clients y voit un excédent disponible, et laisse virer au compte de l'office un argent qui est dû au Trésor | test « les sommes dues aux tiers ne peuvent pas etre virees au compte de l office » |
+| État de contrôle des sommes dues | `etatSommesDues` : compte par compte et dossier par dossier, ce qui a été appelé, ce qui a été reversé, ce qui reste dû, et **depuis quand**. Les reversements s'imputent sur les appels les plus anciens, de sorte que l'ancienneté affichée soit celle du reliquat réel. Écran dédié, export CSV, intégré au dossier d'inspection | tests « le reversement s impute sur les appels les plus anciens », « l etat des sommes dues chiffre compte par compte et dossier par dossier », « l etat des sommes dues figure au dossier d inspection » |
+| Une somme due trop ancienne est signalée, et fait obstacle à la clôture | Au-delà du délai paramétré pour le compte, anomalie **majeure** au tableau de bord et obstacle énuméré par `controlePreCloture` | tests « une somme due au-dela du delai de reversement est signalee », « une somme due non reversee fait obstacle a la cloture de l exercice » |
+| La justification survit au changement d'exercice | `repriseDeboursParDossier` : les à-nouveaux reprennent ces comptes **dossier par dossier**, non pour leur solde global. Un à-nouveau global perdrait au 1ᵉʳ janvier le rattachement de la dette à l'affaire | test « la reprise a nouveau conserve le detail par dossier des sommes dues » |
+
+**Les délais de reversement ne sont pas dans le code.** Ils relèvent de la réglementation
+fiscale du territoire et des conventions de l'office avec le Trésor. Ils sont lus, avec la liste
+des comptes concernés, dans `src/parametres/debours-nc.json`, que `COMPTA_DEBOURS` permet de
+remplacer. Le paramétrage est validé **en bloc** — mal formé, il est refusé entier, jamais
+appliqué à moitié — et chaque lecture en conserve l'**empreinte SHA-256**, de sorte qu'un
+contrôle reste vérifiable après remplacement des paramètres.
+
+**Le fichier livré est fictif — et l'application le dit.** Il porte `"statut": "NON_VALIDE"`,
+un avertissement explicite et aucune source. Tant qu'il l'est, une anomalie **CRITIQUE**
+`PARAMETRES_DEBOURS_NON_VALIDES` remonte au tableau de bord, à l'état des sommes dues et au
+dossier d'inspection : les ancienneté signalées sont indicatives et sans valeur réglementaire.
+Les contrôles qui ne dépendent d'aucun délai — justification par dossier, interdiction du
+reversement excédentaire, représentation — s'appliquent, eux, sans réserve.
+
 ---
 
 ## Partie III. Écarts restants
@@ -170,12 +202,18 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 
 1. **Numérotation des comptes clients** : format retenu `411` + 5 chiffres, à confirmer.
 2. **Seuil de représentation des fonds** : couverture ≥ 100 % exigée en permanence, sans
-   tolérance. À confirmer.
+   tolérance, et portant sur le dû aux clients **et** sur les sommes encaissées pour le compte
+   de tiers (Partie II, section 7). À confirmer.
 3. **Comptes de dépôt** : la liste (512500, 512600) doit correspondre aux comptes réellement
    ouverts auprès de l'établissement teneur.
 4. **Durée de conservation** et modalités de sauvegarde de la base.
 5. **Rapprochement obligatoire** : la clôture exige aujourd'hui un rapprochement clos à la
    date de fin d'exercice pour chaque compte rapprochable.
+6. **Comptes de tiers et délais de reversement** : la liste retenue (448600, 448700, 448800) et
+   les délais au-delà desquels une somme due est signalée relèvent du paramétrage
+   `src/parametres/debours-nc.json`, livré **non validé** et sans source. La périodicité réelle
+   des reversements au Trésor et à la conservation des hypothèques doit être établie avant toute
+   mise en service, de même que le sort d'un débours appelé et non consommé.
 
 ---
 

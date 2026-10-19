@@ -2,6 +2,7 @@ import { un, tous, exec, transaction } from '../db.js';
 import { tracer } from '../audit.js';
 import { ErreurConformite, etatRepresentationFonds } from './controles.js';
 import { verifierChaineEcritures, creerBrouillon, valider } from './ecritures.js';
+import { estCompteDebours, obstaclesDebours, repriseDeboursParDossier } from './debours.js';
 import { sha256 } from '../hash.js';
 
 /**
@@ -61,6 +62,8 @@ export function controlePreCloture(exerciceId) {
     obstacles.push({ code: 'FONDS_NON_REPRESENTES', message: `Fonds clients non representes : deficit de ${-fonds.ecart} XPF.` });
   }
 
+  obstacles.push(...obstaclesDebours(ex));
+
   const chaine = verifierChaineEcritures();
   if (!chaine.valide) {
     obstacles.push({ code: 'CHAINE_ALTEREE', message: `Chaine d inalterabilite rompue (ecriture ${chaine.ecriture_id} : ${chaine.motif}).` });
@@ -111,7 +114,10 @@ export function cloturerExercice(exerciceId, utilisateur, { forcer = false } = {
     );
 
     const resultat = -soldes.filter((s) => s.classe >= 6).reduce((t, s) => t + s.solde, 0);
-    const reprises = soldes.filter((s) => s.classe <= 5);
+    // Les comptes de debours sont repris dossier par dossier : un solde global
+    // perdrait la justification des sommes dues aux tiers.
+    const reprises = soldes.filter((s) => s.classe <= 5 && !estCompteDebours(s.numero));
+    const deboursRepris = repriseDeboursParDossier(exerciceId);
 
     const suivant = un(
       `SELECT * FROM exercices WHERE date_debut > $fin AND statut = 'OUVERT' ORDER BY date_debut LIMIT 1`,
@@ -119,13 +125,22 @@ export function cloturerExercice(exerciceId, utilisateur, { forcer = false } = {
     );
 
     let aNouveau = null;
-    if (suivant && reprises.length) {
+    if (suivant && (reprises.length || deboursRepris.length)) {
       const lignes = reprises.map((s) => ({
         compte: s.numero,
         libelle: `A nouveau ${ex.libelle}`,
         debit: s.solde > 0 ? s.solde : 0,
         credit: s.solde < 0 ? -s.solde : 0,
       }));
+      for (const d of deboursRepris) {
+        lignes.push({
+          compte: d.compte,
+          dossier_id: d.dossier_id,
+          libelle: `A nouveau ${ex.libelle}${d.reference ? ` - ${d.reference}` : ''}`,
+          debit: d.solde > 0 ? d.solde : 0,
+          credit: d.solde < 0 ? -d.solde : 0,
+        });
+      }
       if (resultat !== 0) {
         lignes.push({
           compte: resultat >= 0 ? '120000' : '129000',
