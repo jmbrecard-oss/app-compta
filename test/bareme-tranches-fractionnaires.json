@@ -1,0 +1,30 @@
+{
+  "bareme": {
+    "code": "TEST-TRANCHES-FRAC",
+    "libelle": "Bareme de test - deux tranches fractionnaires",
+    "statut": "FICTIF",
+    "avertissement": "Fixture de test. Aucune valeur reglementaire. Les bornes et taux sont choisis pour que la liquidation laisse une decimale sur DEUX tranches a la fois : c'est le seul cas qui distingue un arrondi unique sur le total d'un arrondi applique tranche par tranche.",
+    "texte_reference": "aucun",
+    "a_valider_par": "aucun",
+    "devise": "XPF",
+    "decimales": 0,
+    "en_vigueur_du": "1978-09-26",
+    "en_vigueur_au": null
+  },
+  "arrondi": "SUPERIEUR",
+  "prestations": [
+    {
+      "code": "DEUX-FRACTIONS",
+      "libelle": "Prestation a deux tranches fractionnaires",
+      "categorie": "EMOLUMENT",
+      "compte": "706100",
+      "mode": "TRANCHES",
+      "tranches": [
+        { "jusqu_a": 1000, "taux_ppm": 10300 },
+        { "jusqu_a": null, "taux_ppm": 20300 }
+      ],
+      "minimum": 0,
+      "tgc": "TGC0"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import { un, tous } from '../db.js';
 import { etatRepresentationFonds, etatDeboursAReverser, anomalies } from '../domain/controles.js';
-import { baremeCourant, baremeFictif, listerTaxes, lireTaxe } from '../domain/tarif.js';
+import { baremeCourant, baremeFictif, listerTaxes, lireTaxe, taxeEnVigueur, taxeAnnulee } from '../domain/tarif.js';
 
 const bornes = (p = {}) => ({
   depuis: p.depuis ?? null,
@@ -169,7 +169,10 @@ export function etatTaxes({ dossier_id } = {}) {
   const toutes = listerTaxes({ dossier_id });
   const bareme = baremeCourant();
   const somme = (liste, champ) => liste.reduce((s, t) => s + t[champ], 0);
-  const comptabilisees = toutes.filter((t) => t.statut === 'COMPTABILISEE');
+  // Une taxe dont l'ecriture a ete contre-passee ne compte plus dans les
+  // produits : son montant a ete extourne.
+  const comptabilisees = toutes.filter(taxeEnVigueur);
+  const annulees = toutes.filter(taxeAnnulee);
 
   return {
     arrete_le: new Date().toISOString().slice(0, 10),
@@ -186,6 +189,7 @@ export function etatTaxes({ dossier_id } = {}) {
     projets: toutes.filter((t) => t.statut === 'PROJET'),
     a_comptabiliser: toutes.filter((t) => t.statut === 'ARRETEE'),
     comptabilisees,
+    annulees,
     totaux: {
       emoluments: somme(comptabilisees, 'total_emoluments'),
       tgc: somme(comptabilisees, 'total_tgc'),
@@ -211,7 +215,10 @@ export function compteDefinitif(dossierId) {
   const fiche = un('SELECT * FROM dossiers WHERE id = $id', { id: dossierId });
 
   const taxes = listerTaxes({ dossier_id: dossierId }).map((t) => lireTaxe(t.id));
-  const comptabilisees = taxes.filter((t) => t.statut === 'COMPTABILISEE');
+  // Seules les taxes dont l'ecriture est toujours en vigueur sont dues par le
+  // client : une taxe contre-passee a ete annulee, et le solde detenu en tient
+  // deja compte. Les additionner contredirait le solde affiche juste a cote.
+  const comptabilisees = taxes.filter(taxeEnVigueur);
   const somme = (champ) => comptabilisees.reduce((s, t) => s + t[champ], 0);
 
   return {
@@ -227,6 +234,8 @@ export function compteDefinitif(dossierId) {
       tgc: somme('total_tgc'),
       debours: somme('total_debours'),
     },
+    taxes_en_vigueur: comptabilisees,
+    taxes_annulees: taxes.filter(taxeAnnulee),
     taxes_non_comptabilisees: taxes.filter((t) => t.statut !== 'COMPTABILISEE'),
     mouvements: tous(
       `SELECT e.date_ecriture, e.journal, e.numero, e.piece_ref, l.libelle, l.debit, l.credit

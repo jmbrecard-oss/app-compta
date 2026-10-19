@@ -268,9 +268,13 @@ export function contrepasser(id, { date_ecriture, motif }, utilisateur) {
       utilisateur,
     );
 
+    // Le lien vers l'ecriture d'origine est pose AVANT la comptabilisation :
+    // les controles doivent savoir qu'ils examinent une extourne, et non une
+    // ecriture nouvelle.
+    exec('UPDATE ecritures SET contrepassation_de = $id WHERE id = $m', { id, m: miroir.id });
+
     const validee = valider(miroir.id, utilisateur);
     exec(`UPDATE ecritures SET statut = 'CONTREPASSEE', contrepassee_par = $m WHERE id = $id`, { m: validee.id, id });
-    exec('UPDATE ecritures SET contrepassation_de = $id WHERE id = $m', { id, m: validee.id });
     tracer(utilisateur.identifiant, 'CONTRE_PASSATION', 'ecriture', id, `vers ${validee.id} - ${motif}`);
     return { origine: lire(id), contrepassation: lire(validee.id) };
   });

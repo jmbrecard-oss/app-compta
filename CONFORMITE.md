@@ -151,7 +151,9 @@ n'a pas été consulté. Le logiciel ne contient donc aucun chiffre de tarif : i
 | L'office n'avance jamais les droits ni les émoluments | L'écriture de taxe débite le compte client du dossier ; `controleSoldeClients` la refuse si le dossier n'est pas provisionné | test « la taxe d'un dossier sans provision est refusée » |
 | Émoluments et débours rattachés à l'acte | `controleRattachementActe` : contrôle **bloquant**, appliqué **ligne par ligne** — une ligne de compte client présente ailleurs dans l'écriture ne rattache pas à l'acte le produit qui l'accompagne. Aucune ligne sur 706100-706400 ni sur 448600/448700/448800 sans dossier, les à-nouveaux exceptés, qui reprennent des soldes et non des actes. Lorsque l'écriture ne désigne qu'un seul dossier, ces lignes en héritent automatiquement ; si elle en concerne plusieurs, le dossier doit être désigné sur la ligne | tests « un émolument comptabilisé hors dossier est refusé », « un débours à reverser au Trésor comptabilisé hors dossier est refusé », « un émolument ne peut pas s'abriter derrière le dossier d'une autre ligne », « un émolument hérite du dossier quand l'écriture n'en concerne qu'un » |
 | Justification des sommes dues aux tiers | `etatDeboursAReverser` : droits d'enregistrement, taxe hypothécaire et débours restant à reverser, par compte **et par dossier**. Un dossier sur lequel l'office a reversé plus qu'il n'a encaissé remonte en anomalie majeure | écran Inspection |
-| Compte définitif du client | `compteDefinitif` : versé par le client, émoluments, TGC, débours, solde lui revenant ; les taxes non comptabilisées sont signalées. Export CSV | test « le compte définitif du dossier récapitule provisions, émoluments et débours » |
+| Une taxe annulée sort des produits et du compte du client | Contre-passer l'écriture de taxe n'altère pas la taxe — la table est inaltérable — mais les états s'en tiennent au statut de l'**écriture** : une taxe contre-passée est présentée à part, et ne compte plus ni dans les produits ni dans ce que le client doit. Sans quoi le compte remis au client annoncerait une taxe que la comptabilité ne porte plus, tout en affichant un solde qui la contredit | test « une taxe contre-passée sort du compte définitif et des produits » |
+| Une écriture reste toujours corrigeable | La contre-passation est exemptée du contrôle de rattachement : elle n'ajoute aucun produit, elle annule l'existant. Sans cette exemption, toute écriture comptabilisée **avant** l'entrée en vigueur du contrôle deviendrait définitivement figée — la base interdisant de retoucher une ligne validée, et la contre-passation étant le seul moyen de corriger | test « une écriture antérieure au contrôle reste contre-passable » |
+| Compte définitif du client | `compteDefinitif` : versé par le client, émoluments, TGC, débours, solde lui revenant. Le total taxé et le total imputé au dossier sont distingués : le solde doit pouvoir se justifier. Taxes non comptabilisées et taxes annulées signalées. Export CSV | test « le compte définitif du dossier récapitule provisions, émoluments et débours » |
 
 Cycle d'une taxe : **projet** (modifiable, sans effet comptable) → **arrêtée** (recalculée,
 confrontée au barème, verrouillée en base) → **comptabilisée** (une écriture lui est attachée
@@ -208,7 +210,10 @@ corrige que par contre-passation de l'écriture et nouvelle taxe.
    ce point n'est pas réglé, aucune taxe produite par l'application n'a de valeur. Trois
    questions se posent au passage :
    - la **règle d'arrondi** du tarif (au franc supérieur, inférieur ou le plus proche) ;
-   - l'assujettissement des émoluments à la **TGC** et le taux applicable ;
+   - l'assujettissement à la **TGC** et les taux applicables. Le moteur n'impose
+     aucune règle : il applique à chaque prestation le taux que le fichier lui
+     attribue. Que les débours et les droits à reverser en soient exonérés — ce que
+     le fichier livré suppose — doit donc être confirmé, et non déduit du code ;
    - les **comptes d'imputation** des droits d'enregistrement et de la taxe hypothécaire
      (448600 et 448700 retenus ici).
 2. **Numérotation des comptes clients** : format retenu `411` + 5 chiffres, à confirmer.

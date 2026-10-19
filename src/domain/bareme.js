@@ -48,7 +48,13 @@ const invalide = (message, details = {}) => {
   throw new ErreurConformite('BAREME_INVALIDE', `Bareme inexploitable : ${message}`, details);
 };
 
-const entierPositif = (v) => Number.isInteger(v) && v >= 0;
+/**
+ * Entier positif REPRESENTABLE exactement. Number.isInteger accepte 1e300,
+ * qui n'est plus un entier pour SQLite ni pour personne : laisse passer, il
+ * finirait en flottant dans une colonne INTEGER, ou ferait echouer le pilote
+ * avec une erreur brute au lieu d'un refus lisible.
+ */
+const entierPositif = (v) => Number.isSafeInteger(v) && v >= 0;
 
 // --------------------------------------------------------------- arrondi --
 
@@ -236,7 +242,7 @@ export function calculerPrestation(saisie, bareme = baremeCourant()) {
       { code, assiette },
     );
   }
-  if (!Number.isInteger(quantite) || quantite < 1) {
+  if (!entierPositif(quantite) || quantite < 1) {
     throw new ErreurConformite('QUANTITE_INVALIDE', `Quantite invalide pour ${code}.`, { code, quantite });
   }
 

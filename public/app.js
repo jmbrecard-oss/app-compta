@@ -599,6 +599,9 @@ async function compteDefinitif(id) {
       ${c.taxes_non_comptabilisees.length ? `<div class="alerte majeure"><strong>Taxes non comptabilisées</strong>
         ${c.taxes_non_comptabilisees.length} taxe(s) de ce dossier ne sont pas passées en comptabilité :
         le compte ci-dessus ne les reflète pas.</div>` : ''}
+      ${c.taxes_annulees.length ? `<div class="alerte information"><strong>Taxes annulées</strong>
+        ${c.taxes_annulees.map((t) => `${echapper(t.reference)} (${xpf(t.total_du)} XPF)`).join(', ')} —
+        écriture contre-passée, montant exclu du compte ci-dessus.</div>` : ''}
     </div>`);
 }
 
@@ -700,6 +703,15 @@ async function vueTaxe() {
       </header>
       ${tableauTaxes(etats.comptabilisees, () => '')}
     </div>
+
+    ${etats.annulees.length ? `
+      <div class="carte" style="margin-top:1rem">
+        <header><h2>Taxes annulées</h2><span class="pastille minuscule">${etats.annulees.length}</span></header>
+        <p class="vide" style="font-style:normal;padding:0 0 .6rem">
+          Taxes dont l'écriture a été contre-passée. Elles restent en base, inaltérées,
+          mais ne comptent plus dans les produits ni dans le compte du client.</p>
+        ${tableauTaxes(etats.annulees, () => '')}
+      </div>` : ''}
 
     <div id="detail-taxe"></div>`;
 

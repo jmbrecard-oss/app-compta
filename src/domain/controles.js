@@ -231,6 +231,13 @@ export function controleEtancheite(lignes) {
 export function controleRattachementActe(lignes, ecriture = {}) {
   if (ecriture.journal === 'AN') return;
 
+  // Une contre-passation n'ajoute aucun produit : elle annule l'existant, et
+  // reprend tel quel le rattachement de l'ecriture d'origine. L'y soumettre
+  // rendrait definitivement incorrigible toute ecriture comptabilisee avant
+  // l'entree en vigueur de ce controle - la contre-passation etant le seul
+  // moyen de corriger, et la base interdisant de retoucher une ligne validee.
+  if (ecriture.contrepassation_de) return;
+
   // Le controle porte sur CHAQUE ligne concernee, et non sur l'ecriture prise
   // globalement : une ligne de compte client presente ailleurs dans l'ecriture
   // ne rattache pas a l'acte le produit d'emolument qui l'accompagne.

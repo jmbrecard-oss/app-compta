@@ -31,9 +31,13 @@ const EST_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Numerotation des taxes : plus grand numero existant, plus un.
- * Comme un brouillon d'ecriture, un projet supprime ne consomme aucune
- * reference - il n'a produit ni ecriture ni document remis au client. Une
- * taxe arretee, elle, n'est plus supprimable : sa reference est definitive.
+ *
+ * Deux taxes ne portent donc jamais la meme reference. En revanche la suite
+ * peut presenter des trous : supprimer un projet libere son numero s'il etait
+ * le dernier, et le laisse perdu sinon. C'est sans portee comptable - une
+ * taxe n'est pas une piece numerotee au sens du journal, et la continuite
+ * exigee porte sur les ECRITURES, que la comptabilisation numerote a part.
+ * Une taxe arretee, elle, n'est plus supprimable : sa reference est definitive.
  */
 function prochaineReference() {
   const max = un(
@@ -252,8 +256,12 @@ export function supprimerTaxe(id, utilisateur) {
 
 export function lireTaxe(id) {
   const t = un(
-    `SELECT t.*, d.reference AS dossier_reference, d.intitule AS dossier_intitule, d.compte_client
-     FROM taxes t JOIN dossiers d ON d.id = t.dossier_id WHERE t.id = $id`,
+    `SELECT t.*, d.reference AS dossier_reference, d.intitule AS dossier_intitule, d.compte_client,
+            e.statut AS ecriture_statut
+     FROM taxes t
+     JOIN dossiers d ON d.id = t.dossier_id
+     LEFT JOIN ecritures e ON e.id = t.ecriture_id
+     WHERE t.id = $id`,
     { id },
   );
   if (!t) return null;
@@ -261,10 +269,22 @@ export function lireTaxe(id) {
   return t;
 }
 
+/**
+ * Une taxe dont l'ecriture a ete contre-passee reste COMPTABILISEE - la table
+ * est inalterable - mais son produit a ete annule. Les etats doivent s'en
+ * tenir au statut de l'ecriture, sans quoi le compte remis au client
+ * annoncerait une taxe que la comptabilite ne porte plus.
+ */
+export const taxeEnVigueur = (t) => t.statut === 'COMPTABILISEE' && t.ecriture_statut === 'VALIDEE';
+export const taxeAnnulee = (t) => t.statut === 'COMPTABILISEE' && t.ecriture_statut === 'CONTREPASSEE';
+
 export function listerTaxes({ dossier_id, statut } = {}) {
   return tous(
-    `SELECT t.*, d.reference AS dossier_reference, d.intitule AS dossier_intitule
-     FROM taxes t JOIN dossiers d ON d.id = t.dossier_id
+    `SELECT t.*, d.reference AS dossier_reference, d.intitule AS dossier_intitule,
+            e.statut AS ecriture_statut
+     FROM taxes t
+     JOIN dossiers d ON d.id = t.dossier_id
+     LEFT JOIN ecritures e ON e.id = t.ecriture_id
      WHERE ($dos IS NULL OR t.dossier_id = $dos)
        AND ($st  IS NULL OR t.statut = $st)
      ORDER BY t.date_acte DESC, t.id DESC`,

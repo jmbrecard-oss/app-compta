@@ -307,9 +307,14 @@ WHEN OLD.statut IN ('ARRETEE','COMPTABILISEE')
    OR NEW.total_debours    <> OLD.total_debours
    OR NEW.total_tgc        <> OLD.total_tgc
    OR NEW.total_du         <> OLD.total_du
+   OR IFNULL(NEW.arrete_le, '')  <> IFNULL(OLD.arrete_le, '')
+   OR IFNULL(NEW.arrete_par, '') <> IFNULL(OLD.arrete_par, '')
    OR (NEW.statut <> OLD.statut
        AND NOT (OLD.statut = 'ARRETEE' AND NEW.statut = 'COMPTABILISEE'))
-   OR (OLD.ecriture_id IS NOT NULL AND IFNULL(NEW.ecriture_id, -1) <> OLD.ecriture_id))
+   -- L'ecriture ne se rattache qu'au moment de la comptabilisation, et ne se
+   -- detache ni ne se remplace ensuite.
+   OR (IFNULL(NEW.ecriture_id, -1) <> IFNULL(OLD.ecriture_id, -1)
+       AND NOT (OLD.statut = 'ARRETEE' AND NEW.statut = 'COMPTABILISEE')))
 BEGIN
   SELECT RAISE(ABORT, 'INALTERABILITE: taxe arretee, modification interdite (contre-passation de l''ecriture et nouvelle taxe)');
 END;
@@ -328,9 +333,12 @@ BEGIN
   SELECT RAISE(ABORT, 'INALTERABILITE: taxe arretee, ajout de ligne interdit');
 END;
 
+-- La condition porte sur les DEUX taxes : deplacer vers une taxe arretee une
+-- ligne appartenant a un projet l'altererait tout autant qu'un ajout direct.
 CREATE TRIGGER IF NOT EXISTS trg_taxe_ligne_maj_interdite
 BEFORE UPDATE ON taxes_lignes
 WHEN (SELECT statut FROM taxes WHERE id = OLD.taxe_id) <> 'PROJET'
+  OR (SELECT statut FROM taxes WHERE id = NEW.taxe_id) <> 'PROJET'
 BEGIN
   SELECT RAISE(ABORT, 'INALTERABILITE: ligne d''une taxe arretee, modification interdite');
 END;
