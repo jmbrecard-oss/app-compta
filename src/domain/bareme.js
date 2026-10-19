@@ -254,6 +254,9 @@ export function calculerPrestation(saisie, bareme = baremeCourant()) {
   let numerateur = 0n;
   let denominateur = 1n;
   let detail = '';
+  // Montant libre tel qu'il a ete saisi, avant application de la quantite :
+  // c'est l'ENTREE de la liquidation, celle dont le recalcul doit repartir.
+  let montantSaisi = 0;
 
   switch (prestation.mode) {
     case 'TRANCHES': {
@@ -273,7 +276,8 @@ export function calculerPrestation(saisie, bareme = baremeCourant()) {
       detail = quantite > 1 ? `${quantite} x ${grouper(prestation.montant)} XPF` : `forfait ${grouper(prestation.montant)} XPF`;
       break;
     case 'LIBRE': {
-      const montant = saisie.montant ?? 0;
+      montantSaisi = saisie.montant ?? 0;
+      const montant = montantSaisi;
       if (!entierPositif(montant)) {
         throw new ErreurConformite(
           'MONTANT_INVALIDE',
@@ -320,6 +324,7 @@ export function calculerPrestation(saisie, bareme = baremeCourant()) {
     mode: prestation.mode,
     assiette,
     quantite,
+    montant_saisi: montantSaisi,
     montant,
     tgc_code: prestation.tgc,
     tgc_montant: tgcMontant,

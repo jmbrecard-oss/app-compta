@@ -37,6 +37,9 @@ initialiser({ denomination: 'Office de test', ridet: '1234567', motDePasse: 'mot
 
 const provisionne = ouvrirDossier({ reference: 'T-001', intitule: 'VENTE MARTIN' }, notaire);
 const demuni = ouvrirDossier({ reference: 'T-002', intitule: 'VENTE SANS PROVISION' }, notaire);
+// Dossier de travail pour les essais de liquidation, afin que les etats des
+// deux dossiers ci-dessus restent lisibles.
+const atelier = ouvrirDossier({ reference: 'T-003', intitule: 'ESSAIS DE LIQUIDATION' }, notaire);
 
 const comptabiliser = (saisie) => valider(creerBrouillon(saisie, notaire).id, notaire).id;
 
@@ -203,6 +206,32 @@ test('une taxe dont une ligne a ete retouchee ne peut pas etre arretee', () => {
   assert.equal(lireTaxe(t.id).statut, 'PROJET');
 });
 
+test('une prestation a montant libre repetee se recalcule a l identique', () => {
+  // La quantite ne doit etre appliquee qu'une fois : le recalcul de l arrete
+  // repart du montant saisi, pas du produit deja multiplie.
+  const t = creerTaxe(
+    { dossier_id: atelier.id, acte: 'Honoraires repetes', date_acte: LE('03-02'),
+      prestations: [{ code: 'HONO-LIBRE', montant: 50_000, quantite: 2 }] },
+    notaire,
+  );
+  assert.equal(t.total_emoluments, 100_000);
+  assert.equal(t.lignes[0].montant_saisi, 50_000, 'l entree de la liquidation est conservee');
+  const arretee = arreterTaxe(t.id, notaire);
+  assert.equal(arretee.statut, 'ARRETEE');
+  assert.equal(arretee.total_emoluments, 100_000);
+});
+
+test('le recalcul de l arrete repart des entrees, pas du resultat enregistre', () => {
+  const t = creerTaxe(
+    { dossier_id: atelier.id, acte: 'Honoraire retouche', date_acte: LE('03-02'),
+      prestations: [{ code: 'HONO-LIBRE', montant: 40_000 }] },
+    notaire,
+  );
+  // On majore le resultat sans toucher a l entree : la divergence doit sortir.
+  exec('UPDATE taxes_lignes SET montant = 900000 WHERE taxe_id = $t', { t: t.id });
+  refuse('TAXE_NON_CONFORME_BAREME', () => arreterTaxe(t.id, notaire));
+});
+
 test('la comptabilisation de la taxe produit l ecriture detaillee de l acte', () => {
   const { ecriture } = comptabiliserTaxe(taxe.id, notaire);
   const parCompte = Object.fromEntries(ecriture.lignes.map((l) => [l.compte, l]));
@@ -225,14 +254,54 @@ test('une taxe deja comptabilisee ne peut pas l etre deux fois', () => {
   refuse('TAXE_DEJA_COMPTABILISEE', () => comptabiliserTaxe(taxe.id, notaire));
 });
 
-test('une taxe comptabilisee est verrouillee dans la base', () => {
-  assert.throws(
-    () => exec('UPDATE taxes SET total_du = 1 WHERE id = $id', { id: taxe.id }),
-    /INALTERABILITE/,
+test('une taxe comptabilisee est verrouillee dans la base, par tous les chemins', () => {
+  const id = taxe.id;
+  const bloque = (sql, params = {}) => assert.throws(() => exec(sql, { id, ...params }), /INALTERABILITE/);
+
+  // Modification directe des totaux, de l entete, des lignes.
+  bloque('UPDATE taxes SET total_du = 1 WHERE id = $id');
+  bloque('UPDATE taxes SET acte = $a WHERE id = $id', { a: 'autre acte' });
+  bloque('UPDATE taxes SET bareme_empreinte = $e WHERE id = $id', { e: 'x'.repeat(64) });
+  bloque('UPDATE taxes_lignes SET montant = 0 WHERE taxe_id = $id');
+  bloque('DELETE FROM taxes_lignes WHERE taxe_id = $id');
+  bloque('DELETE FROM taxes WHERE id = $id');
+
+  // Ajout d une ligne apres coup : ni UPDATE ni DELETE, mais tout aussi
+  // alterant - la taxe ne correspondrait plus a l ecriture passee.
+  bloque(
+    `INSERT INTO taxes_lignes (taxe_id, ordre, prestation_code, libelle, categorie, compte, montant)
+     VALUES ($id, 99, 'DEBOURS', 'Ligne ajoutee', 'DEBOURS', '448800', 999999)`,
   );
-  assert.throws(() => exec('DELETE FROM taxes WHERE id = $id', { id: taxe.id }), /INALTERABILITE/);
+
+  // Retour en arriere du statut : rouvrirait tout ce qui precede.
+  bloque(`UPDATE taxes SET statut = 'PROJET' WHERE id = $id`);
+  bloque(`UPDATE taxes SET statut = 'ARRETEE' WHERE id = $id`);
+  // Detachement de l ecriture : la taxe deviendrait orpheline.
+  bloque('UPDATE taxes SET ecriture_id = NULL WHERE id = $id');
+
+  // Et rien n a bouge.
+  const apres = lireTaxe(id);
+  assert.equal(apres.statut, 'COMPTABILISEE');
+  assert.equal(apres.total_du, 1_505_200);
+  assert.equal(apres.lignes.length, 4);
+});
+
+test('une taxe arretee non comptabilisee est deja figee', () => {
+  const t = creerTaxe(
+    { dossier_id: atelier.id, acte: 'Taxe a figer', date_acte: LE('03-02'),
+      prestations: [{ code: 'DEBOURS', montant: 7_000 }] },
+    notaire,
+  );
+  arreterTaxe(t.id, notaire);
+  assert.throws(() => exec('UPDATE taxes SET total_du = 1 WHERE id = $id', { id: t.id }), /INALTERABILITE/);
+  assert.throws(() => exec(`UPDATE taxes SET statut = 'PROJET' WHERE id = $id`, { id: t.id }), /INALTERABILITE/);
+  assert.throws(() => exec('DELETE FROM taxes WHERE id = $id', { id: t.id }), /INALTERABILITE/);
   assert.throws(
-    () => exec('UPDATE taxes_lignes SET montant = 0 WHERE taxe_id = $id', { id: taxe.id }),
+    () => exec(
+      `INSERT INTO taxes_lignes (taxe_id, ordre, prestation_code, libelle, categorie, compte, montant)
+       VALUES ($id, 9, 'DEBOURS', 'x', 'DEBOURS', '448800', 1)`,
+      { id: t.id },
+    ),
     /INALTERABILITE/,
   );
 });
@@ -283,6 +352,35 @@ test('un debours a reverser au Tresor comptabilise hors dossier est refuse', () 
   refuse('DEBOURS_HORS_DOSSIER', () => valider(b.id, notaire));
 });
 
+test('un emolument herite du dossier quand l ecriture n en concerne qu un', () => {
+  const id = comptabiliser({
+    journal: 'EMO', date_ecriture: LE('03-04'), libelle: 'Emolument complementaire MARTIN',
+    lignes: [
+      { compte: provisionne.compte_client, libelle: 'Emolument', debit: 22_200 },
+      { compte: '706400', libelle: 'Honoraire libre', credit: 20_000 },
+      { compte: '445700', libelle: 'TGC', credit: 2_200 },
+    ],
+  });
+  const ligne = un(
+    `SELECT dossier_id FROM lignes WHERE ecriture_id = $id AND compte = '706400'`, { id },
+  );
+  assert.equal(ligne.dossier_id, provisionne.id, 'le produit remonte a l acte sans saisie manuelle');
+});
+
+test('un emolument ne peut pas s abriter derriere le dossier d une autre ligne', () => {
+  // Deux dossiers dans la meme ecriture : le rattachement du produit devient
+  // ambigu, et une ligne de compte client ne vaut pas rattachement de l acte.
+  const b = creerBrouillon({
+    journal: 'EMO', date_ecriture: LE('03-05'), libelle: 'Emolument entre deux dossiers',
+    lignes: [
+      { compte: provisionne.compte_client, libelle: 'Imputation', debit: 100_000 },
+      { compte: atelier.compte_client, libelle: 'Contrepartie', credit: 60_000 },
+      { compte: '706100', libelle: 'Emoluments', credit: 40_000 },
+    ],
+  }, notaire);
+  refuse('EMOLUMENT_HORS_DOSSIER', () => valider(b.id, notaire));
+});
+
 test('le reversement des droits au Tresor reste possible, rattache au dossier', () => {
   const id = comptabiliser({
     journal: 'BQC', date_ecriture: LE('03-06'), libelle: 'Reversement des droits MARTIN',
@@ -299,12 +397,18 @@ test('le reversement des droits au Tresor reste possible, rattache au dossier', 
 test('le compte definitif du dossier recapitule provisions, emoluments et debours', () => {
   const c = compteDefinitif(provisionne.id);
   assert.equal(c.recu, 5_000_000);
-  assert.equal(c.total_taxe, 1_505_200);
   assert.equal(c.detail.emoluments, 320_000);
   assert.equal(c.detail.tgc, 35_200);
   assert.equal(c.detail.debours, 1_150_000);
-  assert.equal(c.solde_detenu, 3_494_800);
+  assert.equal(c.total_taxe, 1_505_200);
   assert.equal(c.taxes.length, 1);
+
+  // Le total imputé au dossier depasse le total taxe : l emolument
+  // complementaire saisi a la main (22 200 XPF) y figure aussi. Le compte
+  // definitif distingue les deux - sans quoi le solde ne se justifierait pas.
+  assert.equal(c.impute, 1_527_400);
+  assert.equal(c.solde_detenu, c.recu - c.impute);
+  assert.equal(c.solde_detenu, 3_472_600);
   assert.ok(c.bareme_fictif, 'le compte definitif porte la mention du bareme non valide');
 });
 

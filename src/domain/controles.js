@@ -230,26 +230,28 @@ export function controleEtancheite(lignes) {
  */
 export function controleRattachementActe(lignes, ecriture = {}) {
   if (ecriture.journal === 'AN') return;
-  const rattachee = Boolean(ecriture.dossier_id) || lignes.some((l) => l.dossier_id);
-  if (rattachee) return;
 
-  const emolument = lignes.find((l) => COMPTES_EMOLUMENTS.includes(l.compte));
-  if (emolument) {
-    throw new ErreurConformite(
-      'EMOLUMENT_HORS_DOSSIER',
-      `Le compte d emoluments ${emolument.compte} ne peut pas etre mouvemente sans dossier : `
-      + `la taxe d un acte se rattache toujours au dossier qui l a genere.`,
-      { compte: emolument.compte },
-    );
-  }
-  const debours = lignes.find((l) => COMPTES_DEBOURS_TIERS.includes(l.compte));
-  if (debours) {
-    throw new ErreurConformite(
-      'DEBOURS_HORS_DOSSIER',
-      `Le compte ${debours.compte} porte des sommes encaissees pour le compte d autrui : `
-      + `l ecriture doit designer le dossier au titre duquel elles sont dues.`,
-      { compte: debours.compte },
-    );
+  // Le controle porte sur CHAQUE ligne concernee, et non sur l'ecriture prise
+  // globalement : une ligne de compte client presente ailleurs dans l'ecriture
+  // ne rattache pas a l'acte le produit d'emolument qui l'accompagne.
+  for (const l of lignes) {
+    if (l.dossier_id) continue;
+    if (COMPTES_EMOLUMENTS.includes(l.compte)) {
+      throw new ErreurConformite(
+        'EMOLUMENT_HORS_DOSSIER',
+        `Le compte d emoluments ${l.compte} est mouvemente sans dossier : la taxe d un acte se `
+        + `rattache au dossier qui l a genere. Designez-le sur la ligne lorsque l ecriture en concerne plusieurs.`,
+        { compte: l.compte, ordre: l.ordre },
+      );
+    }
+    if (COMPTES_DEBOURS_TIERS.includes(l.compte)) {
+      throw new ErreurConformite(
+        'DEBOURS_HORS_DOSSIER',
+        `Le compte ${l.compte} porte des sommes encaissees pour le compte d autrui : la ligne doit `
+        + `designer le dossier au titre duquel elles sont dues.`,
+        { compte: l.compte, ordre: l.ordre },
+      );
+    }
   }
 }
 

@@ -126,7 +126,7 @@ src/
     fec.js            export FEC et CSV
   server.js           API HTTP et service des fichiers statiques
 public/               interface (HTML/CSS/JS, sans framework)
-test/                 49 tests de conformité
+test/                 54 tests de conformité
 ```
 
 ## Exploitation

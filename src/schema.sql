@@ -190,6 +190,10 @@ CREATE TABLE IF NOT EXISTS taxes_lignes (
   compte          TEXT NOT NULL REFERENCES comptes(numero),
   assiette        INTEGER NOT NULL DEFAULT 0 CHECK (assiette >= 0),
   quantite        INTEGER NOT NULL DEFAULT 1 CHECK (quantite >= 1),
+  -- montant_saisi : entree de la liquidation pour les prestations a montant
+  -- libre, avant application de la quantite. Le recalcul de l'arrete repart
+  -- des entrees ; s'il repartait du resultat, il serait tautologique.
+  montant_saisi   INTEGER NOT NULL DEFAULT 0 CHECK (montant_saisi >= 0),
   montant         INTEGER NOT NULL CHECK (montant >= 0),
   tgc_code        TEXT NOT NULL DEFAULT 'TGC0',
   tgc_montant     INTEGER NOT NULL DEFAULT 0 CHECK (tgc_montant >= 0),
@@ -285,6 +289,10 @@ END;
 -- Une taxe arretee est figee : elle a servi de base a une ecriture et a un
 -- compte remis au client. Seuls le passage a COMPTABILISEE et le rattachement
 -- de l'ecriture restent possibles.
+-- Le statut figure parmi les colonnes verrouillees : sans cela, un retour a
+-- PROJET rouvrirait la taxe entiere a la modification et a la suppression.
+-- Seule la progression ARRETEE -> COMPTABILISEE reste permise, et l'ecriture
+-- une fois rattachee ne se detache plus.
 CREATE TRIGGER IF NOT EXISTS trg_taxe_maj_interdite
 BEFORE UPDATE ON taxes
 WHEN OLD.statut IN ('ARRETEE','COMPTABILISEE')
@@ -298,7 +306,10 @@ WHEN OLD.statut IN ('ARRETEE','COMPTABILISEE')
    OR NEW.total_emoluments <> OLD.total_emoluments
    OR NEW.total_debours    <> OLD.total_debours
    OR NEW.total_tgc        <> OLD.total_tgc
-   OR NEW.total_du         <> OLD.total_du)
+   OR NEW.total_du         <> OLD.total_du
+   OR (NEW.statut <> OLD.statut
+       AND NOT (OLD.statut = 'ARRETEE' AND NEW.statut = 'COMPTABILISEE'))
+   OR (OLD.ecriture_id IS NOT NULL AND IFNULL(NEW.ecriture_id, -1) <> OLD.ecriture_id))
 BEGIN
   SELECT RAISE(ABORT, 'INALTERABILITE: taxe arretee, modification interdite (contre-passation de l''ecriture et nouvelle taxe)');
 END;
@@ -308,6 +319,13 @@ BEFORE DELETE ON taxes
 WHEN OLD.statut <> 'PROJET'
 BEGIN
   SELECT RAISE(ABORT, 'INALTERABILITE: taxe arretee, suppression interdite');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_taxe_ligne_ajout_interdit
+BEFORE INSERT ON taxes_lignes
+WHEN (SELECT statut FROM taxes WHERE id = NEW.taxe_id) <> 'PROJET'
+BEGIN
+  SELECT RAISE(ABORT, 'INALTERABILITE: taxe arretee, ajout de ligne interdit');
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_taxe_ligne_maj_interdite

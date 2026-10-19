@@ -84,11 +84,12 @@ export function creerTaxe(saisie, utilisateur, bareme = baremeCourant()) {
 function insererLigne(taxeId, l) {
   exec(
     `INSERT INTO taxes_lignes (taxe_id, ordre, prestation_code, libelle, categorie, compte,
-                               assiette, quantite, montant, tgc_code, tgc_montant, detail)
-     VALUES ($t, $o, $pc, $lib, $cat, $c, $a, $q, $m, $tc, $tm, $d)`,
+                               assiette, quantite, montant_saisi, montant, tgc_code, tgc_montant, detail)
+     VALUES ($t, $o, $pc, $lib, $cat, $c, $a, $q, $ms, $m, $tc, $tm, $d)`,
     {
       t: taxeId, o: l.ordre, pc: l.code, lib: l.libelle, cat: l.categorie, c: l.compte,
-      a: l.assiette, q: l.quantite, m: l.montant, tc: l.tgc_code, tm: l.tgc_montant, d: l.detail,
+      a: l.assiette, q: l.quantite, ms: l.montant_saisi ?? 0, m: l.montant,
+      tc: l.tgc_code, tm: l.tgc_montant, d: l.detail,
     },
   );
 }
@@ -105,8 +106,17 @@ export function arreterTaxe(id, utilisateur, bareme = baremeCourant()) {
     if (!t.lignes.length) throw new ErreurConformite('TAXE_VIDE', 'Une taxe comporte au moins une prestation.');
 
     for (const l of t.lignes) {
+      // Le recalcul repart des ENTREES conservees (assiette, quantite, montant
+      // libre saisi), jamais du resultat enregistre : sans quoi il se
+      // contenterait de relire ce qu'il est cense verifier.
       const attendue = calculerPrestation(
-        { code: l.prestation_code, assiette: l.assiette, quantite: l.quantite, montant: l.montant, libelle: l.libelle },
+        {
+          code: l.prestation_code,
+          assiette: l.assiette,
+          quantite: l.quantite,
+          montant: l.montant_saisi,
+          libelle: l.libelle,
+        },
         bareme,
       );
       if (attendue.montant !== l.montant || attendue.tgc_montant !== l.tgc_montant || attendue.compte !== l.compte) {
