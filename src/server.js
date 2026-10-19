@@ -12,6 +12,7 @@ import * as Rapprochement from './domain/rapprochement.js';
 import * as Lettrage from './domain/lettrage.js';
 import * as Cloture from './domain/cloture.js';
 import * as Etats from './reports/etats.js';
+import { etatSommesDues, etatRepresentationTiers } from './domain/debours.js';
 import { genererFEC, nomFichierFEC, versCSV } from './reports/fec.js';
 import { verifierChaineAudit, journalAudit } from './audit.js';
 
@@ -108,6 +109,7 @@ route('GET', '/api/tableau-de-bord', 'lire', async () => {
   return {
     exercice,
     representation_fonds: etatRepresentationFonds(),
+    representation_tiers: etatRepresentationTiers(),
     anomalies: anomalies(),
     resultat: { produits: resultat.total_produits, charges: resultat.total_charges, resultat: resultat.resultat },
     dossiers: {
@@ -204,6 +206,7 @@ route('GET', '/api/etats/resultat', 'lire', async ({ query }) => Etats.compteDeR
 route('GET', '/api/etats/bilan', 'lire', async ({ query }) => Etats.bilan(query));
 route('GET', '/api/etats/comptes-clients', 'lire', async () => Etats.etatComptesClients());
 route('GET', '/api/etats/representation-fonds', 'lire', async () => etatRepresentationFonds());
+route('GET', '/api/etats/sommes-dues', 'lire', async ({ query }) => etatSommesDues(query));
 route('GET', '/api/etats/inspection', 'lire', async ({ query }) => Etats.dossierInspection(query));
 
 // --------------------------------------------------------- controles et audit
@@ -244,6 +247,36 @@ route('GET', '/api/export/balance.csv', 'lire', async ({ query, res }) => {
     { titre: 'Solde crediteur', valeur: 'solde_crediteur' },
   ]);
   texteBrut(res, 'balance.csv', contenu, 'text/csv; charset=utf-8');
+  return null;
+});
+
+route('GET', '/api/export/sommes-dues.csv', 'lire', async ({ query, res }) => {
+  const e = etatSommesDues(query);
+  const lignes = [
+    ...e.comptes.flatMap((c) => c.dossiers.map((d) => ({
+      ...d,
+      compte: c.numero,
+      beneficiaire: c.beneficiaire,
+      signalement: [
+        d.delai_depasse ? `au-dela du delai de ${c.delai_reversement_jours} jours` : '',
+        d.excedent_reverse > 0 ? `reversements excedentaires de ${d.excedent_reverse} XPF` : '',
+      ].filter(Boolean).join(' / '),
+    }))),
+    ...e.sans_dossier.map((d) => ({ ...d, reference: '(sans dossier)', signalement: 'somme due non justifiee' })),
+  ];
+  const contenu = versCSV(lignes, [
+    { titre: 'Compte', valeur: 'compte' },
+    { titre: 'Beneficiaire', valeur: 'beneficiaire' },
+    { titre: 'Dossier', valeur: 'reference' },
+    { titre: 'Intitule', valeur: 'intitule' },
+    { titre: 'Appele (XPF)', valeur: 'appele' },
+    { titre: 'Reverse (XPF)', valeur: 'reverse' },
+    { titre: 'Reste du (XPF)', valeur: 'reste_du' },
+    { titre: 'Plus ancien appel', valeur: 'plus_ancien_appel' },
+    { titre: 'Anciennete (jours)', valeur: 'anciennete_jours' },
+    { titre: 'Signalement', valeur: 'signalement' },
+  ]);
+  texteBrut(res, 'sommes-dues.csv', contenu, 'text/csv; charset=utf-8');
   return null;
 });
 

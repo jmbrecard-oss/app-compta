@@ -1,0 +1,31 @@
+{
+  "code": "DEBOURS-NC-DEMO",
+  "statut": "NON_VALIDE",
+  "source": null,
+  "avertissement": "DELAIS FICTIFS. Les delais de reversement ci-dessous ne proviennent d aucun texte : ils sont la pour que l etat de controle des sommes dues soit demontrable, pas pour dire le droit. Les comptes 448600, 448700 et 448800 enregistrent des sommes encaissees pour le compte de tiers - droits d enregistrement, taxe hypothecaire et salaire du conservateur, autres debours a reverser. La periodicite reelle de leur reversement releve de la reglementation fiscale de la Nouvelle-Caledonie et des conventions de l office avec le Tresor ; elle doit etre etablie par la Chambre des notaires de Nouvelle-Caledonie avant toute mise en service. Tant que statut vaut NON_VALIDE, l application le signale en anomalie CRITIQUE.",
+  "remplacer_par": "Les delais et la liste de comptes valides par la Chambre, avec la reference du texte dans le champ source et statut = VALIDE.",
+
+  "comptes": [
+    {
+      "numero": "448600",
+      "beneficiaire": "Tresor public - droits d enregistrement",
+      "delai_reversement_jours": 30
+    },
+    {
+      "numero": "448700",
+      "beneficiaire": "Conservation des hypotheques - taxe hypothecaire et salaire du conservateur",
+      "delai_reversement_jours": 30
+    },
+    {
+      "numero": "448800",
+      "beneficiaire": "Tiers divers - debours encaisses pour le compte des clients",
+      "delai_reversement_jours": 60
+    }
+  ],
+
+  "commentaires": {
+    "comptes": "Comptes de tiers sur lesquels l office enregistre les sommes qu il encaisse pour le compte d un tiers et qu il doit lui reverser. Toute ligne imputee sur l un d eux doit designer le dossier qui l a supportee, sinon la somme due n est rattachable a aucune affaire.",
+    "delai_reversement_jours": "Nombre de jours au-dela duquel une somme appelee et non encore reversee est signalee. L anciennete est calculee appel par appel, les reversements s imputant sur les appels les plus anciens. null desactive le signalement pour ce compte.",
+    "statut": "NON_VALIDE tant que la Chambre n a pas confirme la liste des comptes et les delais."
+  }
+}

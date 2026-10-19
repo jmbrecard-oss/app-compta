@@ -1,4 +1,5 @@
 import { un, tous } from '../db.js';
+import { anomaliesDebours } from './debours.js';
 
 /**
  * Controles de conformite de la comptabilite notariale.
@@ -273,6 +274,10 @@ export function anomalies() {
       message: `Caisse creditrice de ${-caisse} XPF : impossible physiquement.`,
     });
   }
+
+  // Sommes encaissees pour le compte de tiers : justification, anciennete,
+  // representation. Le detail est dans l'etat des sommes dues.
+  liste.push(...anomaliesDebours());
 
   const dossiersSoldes = tous(
     `SELECT * FROM v_soldes_dossiers WHERE statut = 'OUVERT' AND solde = 0

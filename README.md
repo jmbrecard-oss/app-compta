@@ -61,11 +61,20 @@ chronologie du journal, étanchéité office/clients, solde client jamais débit
 représentation permanente des fonds clients. Un refus annule toute l'écriture et
 la laisse en brouillon, avec le motif exact.
 
+**Sommes encaissées pour le compte de tiers.** Droits d'enregistrement, taxe
+hypothécaire, débours à reverser : chaque somme désigne le dossier qui l'a
+supportée, ne peut pas devenir un produit de l'office, n'est jamais reversée
+au-delà de ce qui a été appelé, et reste représentée par les disponibilités au
+même titre que les fonds clients. L'état de contrôle dit, compte par compte et
+dossier par dossier, ce qui reste dû et depuis quand ; au-delà du délai
+paramétré, la clôture est refusée.
+
 **Rapprochement bancaire.** Pointage des mouvements, calcul du solde rapproché,
 clôture refusée tant qu'un écart subsiste.
 
 **États.** Balance, grand livre, journaux, compte de résultat, bilan, état des
-comptes clients, état de représentation des fonds. Exports FEC (18 colonnes) et CSV.
+comptes clients, état de représentation des fonds, état des sommes dues aux
+tiers. Exports FEC (18 colonnes) et CSV.
 
 **Inspection.** Un écran rassemble ce qu'un contrôle demande : volumétrie, état de
 la chaîne d'inaltérabilité, anomalies classées par gravité, exercices, piste
@@ -102,13 +111,15 @@ src/
     dossiers.js       dossiers et comptes clients individualisés
     rapprochement.js  rapprochement bancaire
     lettrage.js       lettrage des comptes de tiers
+    debours.js        sommes dues aux tiers, état de contrôle des sommes dues
     cloture.js        exercices, pré-clôture, à-nouveaux
   reports/
     etats.js          balance, grand livre, résultat, comptes clients, inspection
     fec.js            export FEC et CSV
+  parametres/         paramètres soumis à un texte, à valider par la Chambre
   server.js           API HTTP et service des fichiers statiques
 public/               interface (HTML/CSS/JS, sans framework)
-test/                 21 tests de conformité
+test/                 37 tests de conformité
 ```
 
 ## Exploitation
@@ -126,6 +137,7 @@ test/                 21 tests de conformité
 
 Périmètre : noyau comptable. Ne sont pas couverts le tarif réglementé et le calcul
 des émoluments, les déclarations fiscales, la paie, la gestion des actes et
-l'archivage à valeur probante. Voir la section correspondante de
+l'archivage à valeur probante. Les délais de reversement des sommes dues au Trésor sont
+paramétrables et livrés **non validés** : ils doivent être établis avec la Chambre. Voir la section correspondante de
 [CONFORMITE.md](CONFORMITE.md), ainsi que les points à arbitrer avec la Chambre
 avant toute mise en production.
