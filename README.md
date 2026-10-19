@@ -8,9 +8,13 @@ Application web **locale** : les données ne quittent jamais le poste ou le serv
 de l'étude. Aucune dépendance externe — Node.js seul suffit (SQLite est intégré au
 moteur depuis Node 22.5).
 
-> **L'agrément de la profession est une procédure officielle qu'aucun logiciel ne
-> s'attribue lui-même.** Ce projet vise la conformité technique aux règles que
-> vérifie un contrôle de comptabilité. Voir [CONFORMITE.md](CONFORMITE.md).
+> **Ce logiciel n'est pas attesté et ne peut pas être utilisé en production par un
+> office.** En métropole, l'arrêté du 27 janvier 2006 impose qu'un **commissaire aux
+> comptes** atteste la conformité de tout logiciel de comptabilité notariale *avant* sa
+> mise en service, que le Conseil supérieur du notariat en tienne la liste, et que les
+> inspecteurs vérifient que l'office utilise bien un logiciel de cette liste. En
+> Nouvelle-Calédonie, l'applicabilité de ce texte reste à établir auprès de la Chambre.
+> Le détail et les sources : [CONFORMITE.md](CONFORMITE.md).
 
 ## Démarrer
 
