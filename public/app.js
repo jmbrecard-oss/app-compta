@@ -87,6 +87,12 @@ async function demarrer() {
   const ouvert = exercices.find((e) => e.statut === 'OUVERT');
   $('#exercice-courant').textContent = ouvert ? `Exercice ${ouvert.libelle}` : 'Aucun exercice ouvert';
   $('#nom-utilisateur').textContent = `${etat.utilisateur.nom} — ${etat.utilisateur.role.toLowerCase()}`;
+  // En-tete repris sur chaque page a l'impression : un etat sorti du logiciel
+  // doit porter l'office dont il emane et la date a laquelle il a ete edite.
+  $('#entete-impression').innerHTML = `
+    <div class="titre">${echapper(office.denomination)}${office.ridet ? ` — RIDET ${echapper(office.ridet)}` : ''}</div>
+    <div class="detail">${ouvert ? `Exercice ${echapper(ouvert.libelle)} — ` : ''}édité le ${dateFr(aujourdhui())}
+      par ${echapper(etat.utilisateur.nom)}</div>`;
   await afficher('tableau');
 }
 
@@ -858,6 +864,186 @@ async function vueInspection() {
   })));
 }
 
+// ======================================================================= TGC
+
+/**
+ * Etat preparatoire a la declaration de TGC. Ce n'est pas une declaration :
+ * c'est la justification comptable de ce qui sera declare, ventilee par taux
+ * et rapprochee du mouvement des comptes de taxe.
+ */
+async function vueTgc() {
+  const { periodes } = await api('/etats/tgc/periodes');
+  // On ouvre sur ce qui reclame une action : la plus ancienne periode en
+  // retard, a defaut la derniere periode ou la taxe a bouge.
+  const defaut = periodes.find((p) => p.en_retard)
+    ?? periodes.filter((p) => p.collectee || p.deductible).pop()
+    ?? periodes[periodes.length - 1];
+
+  $('#contenu').innerHTML = `
+    <div class="carte">
+      <header>
+        <h2>Déclaration de TGC — état préparatoire</h2>
+        <button id="tgc-imprimer" class="secondaire" type="button">Imprimer</button>
+      </header>
+      <div class="barre-outils" id="tgc-outils">
+        <label for="tgc-periode">Période
+          <select id="tgc-periode">
+            ${periodes.slice().reverse().map((p) => `
+              <option value="${p.debut}|${p.fin}"${p === defaut ? ' selected' : ''}>${echapper(p.libelle)}${p.en_retard ? ' — en retard' : ''}</option>`).join('')}
+            <option value="libre">Période libre…</option>
+          </select>
+        </label>
+        <label id="tgc-zone-dates" hidden>Du <input type="date" id="tgc-depuis"></label>
+        <label id="tgc-zone-dates2" hidden>Au <input type="date" id="tgc-jusqu"></label>
+        <button id="tgc-editer" class="secondaire" type="button">Éditer</button>
+        <span style="flex:1"></span>
+        <a id="tgc-csv" href="/api/export/tgc.csv" download><button type="button" class="secondaire">Export CSV</button></a>
+      </div>
+      <div id="tgc-rendu"></div>
+    </div>`;
+
+  $('#tgc-periode').addEventListener('change', (ev) => {
+    const libre = ev.target.value === 'libre';
+    $('#tgc-zone-dates').hidden = !libre;
+    $('#tgc-zone-dates2').hidden = !libre;
+  });
+  $('#tgc-editer').addEventListener('click', garde(editerTgc));
+  $('#tgc-imprimer').addEventListener('click', () => window.print());
+  if (defaut) {
+    $('#tgc-depuis').value = defaut.debut;
+    $('#tgc-jusqu').value = defaut.fin;
+  }
+  await editerTgc(periodes);
+}
+
+function bornesTgc() {
+  const choix = $('#tgc-periode').value;
+  if (choix === 'libre') return { depuis: $('#tgc-depuis').value, jusqu: $('#tgc-jusqu').value };
+  const [depuis, jusqu] = choix.split('|');
+  return { depuis, jusqu };
+}
+
+/** Une periode sans mouvement n'est pas « declaree » : elle est sans objet. */
+const etiquettePeriodeTgc = (p) => {
+  if (p.en_retard) return '<span class="pastille critique">en retard</span>';
+  if (!p.collectee && !p.deductible && !p.reste_a_liquider) return '<span class="pastille minuscule">néant</span>';
+  if (p.liquidee) return '<span class="pastille ok">déclarée</span>';
+  return '<span class="pastille minuscule">à déclarer</span>';
+};
+
+const ligneTaux = (t) => `
+  <tr>
+    <td>${echapper(t.libelle)}</td>
+    <td class="nb">${(t.taux_millieme / 10).toLocaleString('fr-FR')} %</td>
+    <td class="nb">${xpf(t.assiette)}</td>
+    <td class="nb">${xpf(t.taxe)}</td>
+    <td class="nb">${t.ecritures}</td>
+  </tr>`;
+
+const tableTaux = (titre, bloc) => `
+  <h3>${titre}</h3>
+  ${bloc.taux.length ? `<table>
+    <thead><tr><th>Taux</th><th class="nb">Barème</th><th class="nb">Assiette</th><th class="nb">Taxe</th><th class="nb">Écritures</th></tr></thead>
+    <tbody>${bloc.taux.map(ligneTaux).join('')}</tbody>
+    <tfoot><tr><th colspan="2">Total</th><th class="nb">${xpf(bloc.assiette_totale)}</th>
+      <th class="nb">${xpf(bloc.total)}</th><th></th></tr></tfoot>
+  </table>` : '<p class="vide">Aucun mouvement sur la période.</p>'}`;
+
+async function editerTgc(periodesConnues = null) {
+  const { depuis, jusqu } = bornesTgc();
+  const p = new URLSearchParams();
+  if (depuis) p.set('depuis', depuis);
+  if (jusqu) p.set('jusqu', jusqu);
+  const e = await api(`/etats/tgc?${p}`);
+  const periodes = periodesConnues ?? (await api('/etats/tgc/periodes')).periodes;
+  $('#tgc-csv').href = `/api/export/tgc.csv?${p}`;
+
+  const retards = periodes.filter((x) => x.en_retard);
+
+  $('#tgc-rendu').innerHTML = `
+    ${e.parametres.statut === 'VALIDE' ? '' : `
+      <div class="alerte majeure">
+        <strong>Barème non validé</strong>
+        ${echapper(e.parametres.avertissement)}
+      </div>`}
+
+    ${retards.length ? `
+      <div class="alerte">
+        <strong>Déclaration en retard</strong>
+        ${retards.length} période(s) échue(s) non déclarée(s), la plus ancienne étant
+        ${echapper(retards[0].libelle)} (échéance ${dateFr(retards[0].echeance)},
+        ${xpf(retards[0].reste_a_liquider)} XPF de TGC collectée).
+      </div>` : ''}
+
+    <div class="grille">
+      <div class="carte">
+        <div class="libelle-indicateur">TGC nette de la période</div>
+        <div class="indicateur ${e.net.montant < 0 ? 'negatif' : ''}">${xpf(Math.abs(e.net.montant))} <small>XPF</small></div>
+        <p>${e.net.a_decaisser ? 'À décaisser au profit du Trésor.' : e.net.credit_reportable ? 'Crédit de TGC reportable.' : 'Rien à déclarer.'}</p>
+      </div>
+      <div class="carte">
+        <div class="libelle-indicateur">Justification</div>
+        <span class="pastille ${e.controle.justifie ? 'ok' : 'critique'}">
+          ${e.controle.justifie ? 'ventilation rapprochée' : 'écart non justifié'}
+        </span>
+        <p>TGC collectée ventilée par taux : ${xpf(e.controle.ventile_collectee)} XPF,
+           dont ${xpf(e.controle.liquide_collectee)} XPF déjà portés en déclaration.
+           Écart avec le mouvement des comptes de taxe :
+           <strong>${xpf(e.controle.ecart_collectee)} XPF</strong> en collectée,
+           <strong>${xpf(e.controle.ecart_deductible)} XPF</strong> en déductible.</p>
+      </div>
+      <div class="carte">
+        <div class="libelle-indicateur">Soldes au ${dateFr(e.periode.jusqu ?? e.arrete_le)}</div>
+        <table><tbody>
+          <tr><td class="compte">${echapper(e.comptes.collectee)}</td><td>TGC collectée</td><td class="nb">${xpf(e.soldes.collectee)}</td></tr>
+          <tr><td class="compte">${echapper(e.comptes.deductible)}</td><td>TGC déductible</td><td class="nb">${xpf(e.soldes.deductible)}</td></tr>
+          <tr><td class="compte">${echapper(e.comptes.a_decaisser)}</td><td>TGC à décaisser</td><td class="nb">${xpf(e.soldes.a_decaisser)}</td></tr>
+        </tbody></table>
+      </div>
+    </div>
+
+    ${tableTaux('TGC collectée', e.collectee)}
+    ${tableTaux('TGC déductible', e.deductible)}
+
+    ${e.non_ventilees.length ? `
+      <h3>Écritures non rattachables à un taux</h3>
+      <div class="alerte"><strong>À justifier</strong>
+        Ces écritures portent de la TGC sans assiette identifiable : la déclaration ne peut pas s'en prévaloir.</div>
+      <table>
+        <thead><tr><th>Date</th><th>Pièce</th><th>Libellé</th><th>Sens</th><th class="nb">Assiette</th><th class="nb">Taxe</th></tr></thead>
+        <tbody>${e.non_ventilees.map((n) => `
+          <tr><td>${dateFr(n.date_ecriture)}</td><td class="compte">${echapper(n.journal)}-${n.numero}</td>
+            <td>${echapper(n.libelle)}</td><td>${echapper(n.cote)}</td>
+            <td class="nb">${xpf(n.assiette)}</td><td class="nb">${xpf(n.taxe)}</td></tr>`).join('')}
+        </tbody>
+      </table>` : ''}
+
+    <h3>Périodes de déclaration (${echapper(e.parametres.periodicite.toLowerCase())})</h3>
+    <div class="defilant"><table>
+      <thead><tr><th>Période</th><th>Échéance</th><th class="nb">Collectée</th><th class="nb">Déductible</th>
+        <th class="nb">Net</th><th class="nb">Reste à déclarer</th><th>État</th></tr></thead>
+      <tbody>${periodes.slice().reverse().map((x) => `
+        <tr><td>${echapper(x.libelle)}</td><td>${dateFr(x.echeance)}</td>
+          <td class="nb">${xpf(x.collectee)}</td><td class="nb">${xpf(x.deductible)}</td>
+          <td class="nb">${xpf(x.net)}</td><td class="nb">${xpf(x.reste_a_liquider)}</td>
+          <td>${etiquettePeriodeTgc(x)}</td></tr>`).join('')}
+      </tbody>
+    </table></div>
+
+    ${e.soldes.collectee > 0 && etat.utilisateur.role !== 'INSPECTEUR' ? `
+      <div class="barre-outils" style="margin-top:1rem">
+        <button id="tgc-preparer" type="button">Préparer l'écriture de déclaration</button>
+      </div>
+      <p class="vide">L'écriture est créée en brouillon : elle ne sera comptabilisée qu'après vérification et validation.</p>`
+      : ''}`;
+
+  $('#tgc-preparer')?.addEventListener('click', garde(async () => {
+    const b = await api('/tgc/liquidation', { methode: 'POST', corps: bornesTgc() });
+    message(`Brouillon de déclaration créé (écriture ${b.id}). À vérifier puis comptabiliser.`);
+    await afficher('ecritures');
+  }));
+}
+
 const VUES = {
   tableau: vueTableau,
   saisie: vueSaisie,
@@ -865,6 +1051,7 @@ const VUES = {
   dossiers: vueDossiers,
   rapprochement: vueRapprochement,
   etats: vueEtats,
+  tgc: vueTgc,
   inspection: vueInspection,
 };
 

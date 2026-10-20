@@ -1,4 +1,7 @@
 import { un, tous } from '../db.js';
+// Cycle assume : tgc.js n'utilise ErreurConformite qu'a l'interieur de ses
+// fonctions, et controles.js n'appelle anomaliesTgc qu'a l'execution.
+import { anomaliesTgc } from './tgc.js';
 
 /**
  * Controles de conformite de la comptabilite notariale.
@@ -286,6 +289,8 @@ export function anomalies() {
       message: 'Compte client solde : le dossier peut etre clos.',
     });
   }
+
+  liste.push(...anomaliesTgc());
 
   return liste;
 }

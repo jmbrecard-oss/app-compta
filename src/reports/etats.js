@@ -1,5 +1,6 @@
 import { un, tous } from '../db.js';
 import { etatRepresentationFonds, anomalies } from '../domain/controles.js';
+import { etatTgc, periodesTgc } from '../domain/tgc.js';
 
 const bornes = (p = {}) => ({
   depuis: p.depuis ?? null,
@@ -173,6 +174,8 @@ export function dossierInspection(p = {}) {
     representation_fonds: etatRepresentationFonds(),
     anomalies: anomalies(),
     comptes_attente: tous(`SELECT * FROM v_soldes WHERE nature = 'ATTENTE'`),
+    tgc: etatTgc(bornes(p)),
+    tgc_periodes: periodesTgc({ jusqu: bornes(p).jusqu, limite: 12 }),
     rapprochements: tous(
       `SELECT r.*, c.intitule FROM rapprochements r JOIN comptes c ON c.numero = r.compte
        ORDER BY r.date_arrete DESC LIMIT 24`,

@@ -64,8 +64,22 @@ la laisse en brouillon, avec le motif exact.
 **Rapprochement bancaire.** Pointage des mouvements, calcul du solde rapproché,
 clôture refusée tant qu'un écart subsiste.
 
+**TGC.** État préparatoire à la déclaration : la taxe collectée et la taxe déductible
+sont ventilées par taux à partir des seules écritures comptabilisées, puis rapprochées
+du mouvement des comptes 445600 / 445700. Toute taxe comptabilisée doit correspondre à
+un taux en vigueur appliqué à l'assiette de la même écriture, sinon l'écriture est
+refusée. Les périodes échues et non déclarées sont relancées et font obstacle à la
+clôture. L'écriture de déclaration est proposée en brouillon.
+
+> Les taux, la périodicité et la règle d'arrondi ne sont pas dans le code : ils sont lus
+> dans `src/parametres/tgc-nc.json`, **livré non vérifié** et à confronter au texte en
+> vigueur avant tout usage. Le chargeur refuse un fichier qui se déclarerait conforme
+> sans citer sa source.
+
 **États.** Balance, grand livre, journaux, compte de résultat, bilan, état des
 comptes clients, état de représentation des fonds. Exports FEC (18 colonnes) et CSV.
+Tous les états s'impriment : en-têtes de tableaux répétés sur chaque page, aucune
+colonne tronquée, identité de l'office en tête du document.
 
 **Inspection.** Un écran rassemble ce qu'un contrôle demande : volumétrie, état de
 la chaîne d'inaltérabilité, anomalies classées par gravité, exercices, piste
@@ -102,13 +116,16 @@ src/
     dossiers.js       dossiers et comptes clients individualisés
     rapprochement.js  rapprochement bancaire
     lettrage.js       lettrage des comptes de tiers
+    tgc.js            contrôle de la taxe, état préparatoire, relance des périodes
     cloture.js        exercices, pré-clôture, à-nouveaux
+  parametres/
+    tgc-nc.json       taux et périodicité de TGC — À VALIDER auprès de la DSF
   reports/
     etats.js          balance, grand livre, résultat, comptes clients, inspection
     fec.js            export FEC et CSV
   server.js           API HTTP et service des fichiers statiques
 public/               interface (HTML/CSS/JS, sans framework)
-test/                 21 tests de conformité
+test/                 51 tests de conformité
 ```
 
 ## Exploitation
@@ -125,7 +142,8 @@ test/                 21 tests de conformité
 ## Limites
 
 Périmètre : noyau comptable. Ne sont pas couverts le tarif réglementé et le calcul
-des émoluments, les déclarations fiscales, la paie, la gestion des actes et
-l'archivage à valeur probante. Voir la section correspondante de
+des émoluments, la télédéclaration et la liasse de résultat, la paie, la gestion des
+actes et l'archivage à valeur probante. Les paramètres de TGC livrés n'ont pas été
+relevés sur le texte en vigueur et doivent l'être avant tout usage. Voir la section correspondante de
 [CONFORMITE.md](CONFORMITE.md), ainsi que les points à arbitrer avec la Chambre
 avant toute mise en production.

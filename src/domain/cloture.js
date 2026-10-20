@@ -2,6 +2,7 @@ import { un, tous, exec, transaction } from '../db.js';
 import { tracer } from '../audit.js';
 import { ErreurConformite, etatRepresentationFonds } from './controles.js';
 import { verifierChaineEcritures, creerBrouillon, valider } from './ecritures.js';
+import { periodesTgcEnRetard } from './tgc.js';
 import { sha256 } from '../hash.js';
 
 /**
@@ -64,6 +65,15 @@ export function controlePreCloture(exerciceId) {
   const chaine = verifierChaineEcritures();
   if (!chaine.valide) {
     obstacles.push({ code: 'CHAINE_ALTEREE', message: `Chaine d inalterabilite rompue (ecriture ${chaine.ecriture_id} : ${chaine.motif}).` });
+  }
+
+  const [tgcEnRetard] = periodesTgcEnRetard(ex);
+  if (tgcEnRetard) {
+    obstacles.push({
+      code: 'TGC_NON_LIQUIDEE',
+      message: `Periode de TGC ${tgcEnRetard.code} echue le ${tgcEnRetard.echeance} : `
+        + `${tgcEnRetard.reste_a_liquider} XPF de taxe collectee non declaree.`,
+    });
   }
 
   const comptesRapprochables = tous(`SELECT numero, intitule FROM comptes WHERE rapprochable = 1 AND actif = 1`);

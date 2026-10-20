@@ -12,6 +12,7 @@ import {
   controleRepresentationFonds,
   controleEtancheite,
 } from './controles.js';
+import { controleTgc } from './tgc.js';
 
 const EST_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -160,6 +161,7 @@ export function valider(id, utilisateur) {
     controleEquilibre(lignes);
     controleComptes(lignes);
     controleEtancheite(lignes);
+    controleTgc(lignes, e);
     const exercice = controleExercice(e.date_ecriture);
     controleChronologie(e.journal, exercice.id, e.date_ecriture);
 

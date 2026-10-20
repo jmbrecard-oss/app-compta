@@ -1,0 +1,35 @@
+{
+  "territoire": "Nouvelle-Caledonie",
+  "taxe": "TGC - taxe generale sur la consommation",
+  "version": "2026-10-20",
+  "statut": "A_VALIDER",
+  "reference": "",
+  "avertissement": "Jeu de parametres NON VERIFIE dans le texte officiel. Les taux, la periodicite de declaration, le delai de depot et la regle d'arrondi reproduits ici n'ont PAS ete releves sur le Code des impots de la Nouvelle-Caledonie ni aupres de la Direction des services fiscaux. Ils doivent etre confrontes au texte en vigueur, puis le statut passe a VALIDE avec la reference exacte, avant tout usage en office. Tant que le statut vaut A_VALIDER, l'etat preparatoire produit par le logiciel est un document de travail et non une declaration.",
+  "a_verifier": [
+    "Taux de TGC en vigueur et champ d'application de chacun.",
+    "Regime applicable aux emoluments et honoraires d'un office notarial.",
+    "Periodicite de la declaration et seuils qui la determinent.",
+    "Delai de depot et de paiement apres la fin de la periode.",
+    "Regle d'arrondi officielle de la taxe liquidee.",
+    "Sort du credit de TGC : report, imputation ou remboursement."
+  ],
+  "comptes": {
+    "collectee": "445700",
+    "deductible": "445600",
+    "a_decaisser": "445500"
+  },
+  "arrondi": "PROCHE",
+  "tolerance_arrondi_xpf": 0,
+  "declaration": {
+    "periodicite": "MENSUELLE",
+    "jours_apres_periode": 30,
+    "sourcee": false
+  },
+  "taux": [
+    { "code": "TGC0", "libelle": "Exonere ou hors champ", "taux_millieme": 0, "sourcee": false },
+    { "code": "TGC3", "libelle": "Taux reduit 3 %", "taux_millieme": 30, "sourcee": false },
+    { "code": "TGC6", "libelle": "Taux particulier 6 %", "taux_millieme": 60, "sourcee": false },
+    { "code": "TGC11", "libelle": "Taux general 11 %", "taux_millieme": 110, "sourcee": false },
+    { "code": "TGC22", "libelle": "Taux superieur 22 %", "taux_millieme": 220, "sourcee": false }
+  ]
+}

@@ -11,6 +11,7 @@ import * as Dossiers from './domain/dossiers.js';
 import * as Rapprochement from './domain/rapprochement.js';
 import * as Lettrage from './domain/lettrage.js';
 import * as Cloture from './domain/cloture.js';
+import * as Tgc from './domain/tgc.js';
 import * as Etats from './reports/etats.js';
 import { genererFEC, nomFichierFEC, versCSV } from './reports/fec.js';
 import { verifierChaineAudit, journalAudit } from './audit.js';
@@ -206,6 +207,29 @@ route('GET', '/api/etats/comptes-clients', 'lire', async () => Etats.etatComptes
 route('GET', '/api/etats/representation-fonds', 'lire', async () => etatRepresentationFonds());
 route('GET', '/api/etats/inspection', 'lire', async ({ query }) => Etats.dossierInspection(query));
 
+// ------------------------------------------------------------------------ TGC
+
+route('GET', '/api/etats/tgc', 'lire', async ({ query }) => Tgc.etatTgc(query));
+route('GET', '/api/etats/tgc/periodes', 'lire', async ({ query }) => ({
+  periodes: Tgc.periodesTgc({
+    jusqu: query.jusqu ?? null,
+    limite: query.limite ? Number(query.limite) : undefined,
+  }),
+}));
+route('GET', '/api/tgc/liquidation', 'lire', async ({ query }) => ({
+  proposition: Tgc.propositionLiquidationTgc(query),
+}));
+route('POST', '/api/tgc/liquidation', 'saisir', async ({ corps, utilisateur }) => {
+  const proposition = Tgc.propositionLiquidationTgc(corps);
+  if (!proposition) {
+    throw new ErreurConformite(
+      'TGC_RIEN_A_LIQUIDER',
+      'Aucune TGC collectee ne reste a declarer a cette date.',
+    );
+  }
+  return Ecritures.creerBrouillon(proposition, utilisateur);
+});
+
 // --------------------------------------------------------- controles et audit
 
 route('GET', '/api/controles/anomalies', 'lire', async () => anomalies());
@@ -244,6 +268,24 @@ route('GET', '/api/export/balance.csv', 'lire', async ({ query, res }) => {
     { titre: 'Solde crediteur', valeur: 'solde_crediteur' },
   ]);
   texteBrut(res, 'balance.csv', contenu, 'text/csv; charset=utf-8');
+  return null;
+});
+
+route('GET', '/api/export/tgc.csv', 'lire', async ({ query, res }) => {
+  const e = Tgc.etatTgc(query);
+  const lignes = [
+    ...e.collectee.taux.map((t) => ({ sens: 'TGC collectee', ...t })),
+    ...e.deductible.taux.map((t) => ({ sens: 'TGC deductible', ...t })),
+  ];
+  const contenu = versCSV(lignes, [
+    { titre: 'Sens', valeur: 'sens' },
+    { titre: 'Taux', valeur: 'libelle' },
+    { titre: 'Taux (pour mille)', valeur: 'taux_millieme' },
+    { titre: 'Assiette (XPF)', valeur: 'assiette' },
+    { titre: 'Taxe (XPF)', valeur: 'taxe' },
+    { titre: 'Ecritures', valeur: 'ecritures' },
+  ]);
+  texteBrut(res, 'tgc.csv', contenu, 'text/csv; charset=utf-8');
   return null;
 });
 
