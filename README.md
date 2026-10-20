@@ -62,16 +62,21 @@ représentation permanente des fonds clients. Un refus annule toute l'écriture 
 la laisse en brouillon, avec le motif exact.
 
 **Rapprochement bancaire.** Pointage des mouvements, calcul du solde rapproché,
-clôture refusée tant qu'un écart subsiste.
+clôture refusée tant qu'un écart subsiste. La *continuité* est surveillée : chaque
+compte rapprochable a son calendrier de périodes depuis son premier mouvement, les
+périodes non rapprochées sont relancées automatiquement, et un arrêté ne peut pas être
+clos tant que le précédent ne l'est pas. Un arrêté en cours de mois ne couvre aucune
+période.
 
 **États.** Balance, grand livre, journaux, compte de résultat, bilan, état des
 comptes clients, état de représentation des fonds. Exports FEC (18 colonnes) et CSV.
 
 **Inspection.** Un écran rassemble ce qu'un contrôle demande : volumétrie, état de
-la chaîne d'inaltérabilité, anomalies classées par gravité, exercices, piste
-d'audit nominative et horodatée.
+la chaîne d'inaltérabilité, continuité des rapprochements bancaires, anomalies classées
+par gravité, exercices, piste d'audit nominative et horodatée.
 
-**Clôture d'exercice.** Diagnostic préalable listant chaque obstacle, génération des
+**Clôture d'exercice.** Diagnostic préalable listant chaque obstacle — dont chaque
+période d'un compte rapprochable restée sans rapprochement clos —, génération des
 à-nouveaux, scellement de l'exercice par une empreinte.
 
 ## Rôles
@@ -101,6 +106,7 @@ src/
     ecritures.js      cycle brouillon → comptabilisation → contre-passation
     dossiers.js       dossiers et comptes clients individualisés
     rapprochement.js  rapprochement bancaire
+    surveillance.js   périodicité des rapprochements, relance des périodes manquantes
     lettrage.js       lettrage des comptes de tiers
     cloture.js        exercices, pré-clôture, à-nouveaux
   reports/
@@ -108,7 +114,7 @@ src/
     fec.js            export FEC et CSV
   server.js           API HTTP et service des fichiers statiques
 public/               interface (HTML/CSS/JS, sans framework)
-test/                 21 tests de conformité
+test/                 32 tests de conformité
 ```
 
 ## Exploitation

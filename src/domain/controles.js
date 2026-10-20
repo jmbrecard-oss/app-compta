@@ -1,4 +1,5 @@
 import { un, tous } from '../db.js';
+import { relancesRapprochements } from './surveillance.js';
 
 /**
  * Controles de conformite de la comptabilite notariale.
@@ -223,7 +224,7 @@ export function controleEtancheite(lignes) {
 // Controles signales : tableau de bord et dossier d'inspection
 // --------------------------------------------------------------------------
 
-export function anomalies() {
+export function anomalies(options = {}) {
   const liste = [];
 
   for (const d of tous('SELECT * FROM v_soldes_dossiers WHERE solde > 0')) {
@@ -261,6 +262,17 @@ export function anomalies() {
       code: 'BROUILLONS_EN_ATTENTE',
       objet: 'Saisie',
       message: `${brouillons} ecriture(s) en brouillon, non comptabilisee(s).`,
+    });
+  }
+
+  // Rapprochements periodiques non effectues : entre deux arretes rapproches,
+  // aucune verification externe ne couvre les fonds detenus.
+  for (const r of relancesRapprochements(options).relances) {
+    liste.push({
+      gravite: r.gravite,
+      code: 'RAPPROCHEMENT_EN_RETARD',
+      objet: `Compte ${r.compte}`,
+      message: r.message,
     });
   }
 

@@ -2,6 +2,7 @@ import { un, tous, exec, transaction } from '../db.js';
 import { tracer } from '../audit.js';
 import { ErreurConformite, etatRepresentationFonds } from './controles.js';
 import { verifierChaineEcritures, creerBrouillon, valider } from './ecritures.js';
+import { calendrierRapprochements } from './surveillance.js';
 import { sha256 } from '../hash.js';
 
 /**
@@ -66,20 +67,24 @@ export function controlePreCloture(exerciceId) {
     obstacles.push({ code: 'CHAINE_ALTEREE', message: `Chaine d inalterabilite rompue (ecriture ${chaine.ecriture_id} : ${chaine.motif}).` });
   }
 
+  // Toutes les periodes de l'exercice doivent etre rapprochees, pas seulement
+  // la derniere : un rapprochement unique au 31 decembre laisse onze mois sans
+  // verification externe des fonds detenus.
   const comptesRapprochables = tous(`SELECT numero, intitule FROM comptes WHERE rapprochable = 1 AND actif = 1`);
   for (const c of comptesRapprochables) {
-    const dernier = un(
-      `SELECT date_arrete FROM rapprochements
-       WHERE compte = $c AND statut = 'CLOS' AND date_arrete <= $fin
-       ORDER BY date_arrete DESC LIMIT 1`,
-      { c: c.numero, fin: ex.date_fin },
-    );
-    if (!dernier || dernier.date_arrete < ex.date_fin) {
-      obstacles.push({
-        code: 'RAPPROCHEMENT_MANQUANT',
-        message: `Compte ${c.numero} : aucun rapprochement bancaire clos au ${ex.date_fin}.`,
-      });
-    }
+    const calendrier = calendrierRapprochements(c.numero, {
+      aujourdhui: ex.date_fin,
+      jusqu: ex.date_fin,
+      depuis: ex.date_debut,
+      delai_jours: 0,
+    });
+    if (calendrier.conforme) continue;
+    obstacles.push({
+      code: 'RAPPROCHEMENT_MANQUANT',
+      message: `Compte ${c.numero} : ${calendrier.nb_periodes_manquantes} periode(s) sans rapprochement `
+        + `bancaire clos (${calendrier.periodes_manquantes.map((p) => p.libelle).join(', ')}).`,
+      details: { compte: c.numero, periodes: calendrier.periodes_manquantes.map((p) => p.libelle) },
+    });
   }
 
   return { exercice: ex, obstacles, pret: obstacles.length === 0 };
