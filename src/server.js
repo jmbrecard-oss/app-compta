@@ -13,7 +13,9 @@ import * as Lettrage from './domain/lettrage.js';
 import * as Cloture from './domain/cloture.js';
 import * as Etats from './reports/etats.js';
 import { genererFEC, nomFichierFEC, versCSV } from './reports/fec.js';
-import { verifierChaineAudit, journalAudit } from './audit.js';
+import { genererArchive, serialiserArchive, nomFichierArchive } from './reports/archive.js';
+import { verifierArchive } from './reports/verification-archive.js';
+import { tracer, verifierChaineAudit, journalAudit } from './audit.js';
 
 const PORT = Number(process.env.PORT ?? 7420);
 const HOTE = process.env.HOTE ?? '127.0.0.1';
@@ -213,6 +215,29 @@ route('GET', '/api/controles/chaine', 'lire', async () => ({
   ecritures: Ecritures.verifierChaineEcritures(),
   audit: verifierChaineAudit(),
 }));
+/**
+ * Contre-epreuve immediate : l'application edite une archive et la soumet au
+ * verificateur independant, celui-la meme qu'un inspecteur lancerait sur le
+ * fichier recu. Si les deux divergeaient, l'archive ne vaudrait rien.
+ *
+ * Le scelle n'est pas rendu ici : il depend de l'instant d'edition et figure
+ * dans le fichier exporte. La racine de la chaine, elle, est stable : c'est
+ * la valeur a deposer hors de l'archive.
+ */
+route('GET', '/api/controles/archive', 'lire', async ({ utilisateur }) => {
+  const archive = genererArchive({ edite_par: utilisateur.identifiant });
+  const r = verifierArchive(archive);
+  return {
+    nom_fichier: nomFichierArchive(),
+    valide: r.valide,
+    racine_chaine: r.racine_chaine,
+    racine_audit: r.racine_audit,
+    volumetrie: r.volumetrie,
+    controles: r.controles,
+    anomalies: r.anomalies,
+  };
+});
+
 route('GET', '/api/audit', 'lire', async ({ query }) => journalAudit({
   ...query,
   limite: query.limite ? Number(query.limite) : undefined,
@@ -230,6 +255,27 @@ route('GET', '/api/export/fec', 'lire', async ({ query, res }) => {
     jusqu: query.jusqu ?? null,
   });
   texteBrut(res, nomFichierFEC(exercice), contenu);
+  return null;
+});
+
+/**
+ * Archive scellee : la chaine complete des ecritures comptabilisees, le plan
+ * comptable, les dossiers, les exercices et le journal d'audit, sous un scelle
+ * unique. L'edition est elle-meme tracee : le scelle delivre figure ainsi dans
+ * la piste d'audit que reprendront les archives suivantes.
+ *
+ * La trace est posee avant l'envoi, jamais apres : l'archive est deja
+ * constituee en memoire, son contenu n'en bouge donc pas, et un echec
+ * d'ecriture du journal d'audit doit encore pouvoir etre rendu en erreur HTTP.
+ */
+route('GET', '/api/export/archive.json', 'lire', async ({ utilisateur, res }) => {
+  const archive = genererArchive({ edite_par: utilisateur.identifiant });
+  const racine = verifierArchive(archive).racine_chaine;
+  tracer(
+    utilisateur.identifiant, 'EDITION_ARCHIVE', 'archive', null,
+    `scelle=${archive.scelle} racine=${racine} ecritures=${archive.contenu.ecritures.length}`,
+  );
+  texteBrut(res, nomFichierArchive(), serialiserArchive(archive), 'application/json; charset=utf-8');
   return null;
 });
 

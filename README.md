@@ -65,11 +65,27 @@ la laisse en brouillon, avec le motif exact.
 clôture refusée tant qu'un écart subsiste.
 
 **États.** Balance, grand livre, journaux, compte de résultat, bilan, état des
-comptes clients, état de représentation des fonds. Exports FEC (18 colonnes) et CSV.
+comptes clients, état de représentation des fonds. Exports FEC (18 colonnes), archive
+scellée et CSV.
 
 **Inspection.** Un écran rassemble ce qu'un contrôle demande : volumétrie, état de
 la chaîne d'inaltérabilité, anomalies classées par gravité, exercices, piste
 d'audit nominative et horodatée.
+
+**Archive scellée.** La chaîne complète des écritures comptabilisées s'exporte en un
+document unique, scellé par une empreinte, relisible sans l'application. Un utilitaire
+séparé le vérifie — il n'ouvre pas la base et ne connaît que le fichier reçu :
+
+```bash
+node src/verifier-archive.js 1234567-ARCHIVE-20261020.json --racine <empreinte déposée>
+```
+
+Il rend un rapport contrôle par contrôle et un code de sortie 0 ou 1. Sans `--racine`,
+il établit la cohérence interne de l'archive ; avec, il établit qu'il s'agit bien de
+l'archive arrêtée par l'office. La racine — empreinte de la dernière écriture, qui résume
+toutes les précédentes — doit être conservée **hors** de l'archive : c'est elle, et elle
+seule, qui rend une falsification détectable. Voir
+[CONFORMITE.md](CONFORMITE.md), Partie II § 7.
 
 **Clôture d'exercice.** Diagnostic préalable listant chaque obstacle, génération des
 à-nouveaux, scellement de l'exercice par une empreinte.
@@ -106,9 +122,12 @@ src/
   reports/
     etats.js          balance, grand livre, résultat, comptes clients, inspection
     fec.js            export FEC et CSV
+    archive.js        édition de l'archive scellée
+    verification-archive.js  vérification d'une archive, sans accès à la base
+  verifier-archive.js utilitaire de vérification indépendant (ligne de commande)
   server.js           API HTTP et service des fichiers statiques
 public/               interface (HTML/CSS/JS, sans framework)
-test/                 21 tests de conformité
+test/                 34 tests de conformité
 ```
 
 ## Exploitation
@@ -125,7 +144,7 @@ test/                 21 tests de conformité
 ## Limites
 
 Périmètre : noyau comptable. Ne sont pas couverts le tarif réglementé et le calcul
-des émoluments, les déclarations fiscales, la paie, la gestion des actes et
-l'archivage à valeur probante. Voir la section correspondante de
+des émoluments, les déclarations fiscales, la paie, la gestion des actes, ni
+l'horodatage qualifié et la sauvegarde hors site de l'archive. Voir la section correspondante de
 [CONFORMITE.md](CONFORMITE.md), ainsi que les points à arbitrer avec la Chambre
 avant toute mise en production.

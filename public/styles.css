@@ -213,3 +213,4 @@ details.bloc summary { cursor: pointer; font-weight: 600; }
 
 .vide { color: var(--texte-doux); font-style: italic; padding: 1rem 0; }
 .empreinte { font-family: var(--mono); font-size: .72rem; color: var(--texte-doux); word-break: break-all; }
+code { font-family: var(--mono); font-size: .78rem; background: var(--surface-2); border: 1px solid var(--bord); border-radius: 4px; padding: .1rem .35rem; word-break: break-all; }
