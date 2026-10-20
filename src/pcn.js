@@ -12,7 +12,8 @@
  * Les comptes clients individualises (411xxxxx) ne figurent pas ici : ils sont
  * crees automatiquement a l'ouverture de chaque dossier.
  *
- * Colonnes : [numero, intitule, nature, sens_normal, lettrable, rapprochable, collectif]
+ * Colonnes : [numero, intitule, nature, sens_normal, lettrable, rapprochable,
+ *             collectif, rubrique]
  */
 
 const C = (numero, intitule, opts = {}) => ({
@@ -25,6 +26,7 @@ const C = (numero, intitule, opts = {}) => ({
   lettrable: opts.lettrable ? 1 : 0,
   rapprochable: opts.rapprochable ? 1 : 0,
   collectif: opts.collectif ? 1 : 0,
+  rubrique: opts.rubrique ? 1 : 0,
 });
 
 export const PLAN_COMPTABLE = [
@@ -82,8 +84,11 @@ export const PLAN_COMPTABLE = [
   C('512500', 'Compte de depot des fonds clients', {
     nature: 'DEPOT_FONDS_CLIENTS', sens: 'DEBIT', rapprochable: true,
   }),
+  // Compte rubrique : les fonds y sont places par sous-compte nominatif. Tout
+  // mouvement designe le dossier proprietaire, et les produits financiers que
+  // le placement degage reviennent a ce dossier, jamais a l'office.
   C('512600', 'Compte de depot des fonds clients - placements rubriques', {
-    nature: 'DEPOT_FONDS_CLIENTS', sens: 'DEBIT', rapprochable: true,
+    nature: 'DEPOT_FONDS_CLIENTS', sens: 'DEBIT', rapprochable: true, rubrique: true,
   }),
   C('514000', 'Cheques et effets a encaisser', { sens: 'DEBIT' }),
   C('531000', 'Caisse de l office', { nature: 'CAISSE', sens: 'DEBIT' }),

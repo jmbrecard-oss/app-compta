@@ -12,6 +12,12 @@ import {
   controleRepresentationFonds,
   controleEtancheite,
 } from './controles.js';
+import {
+  controleRubrication,
+  controleNonCompensationRubriques,
+  controleRubriquesDossiers,
+  dossiersConcernes,
+} from './placements.js';
 
 const EST_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -160,6 +166,8 @@ export function valider(id, utilisateur) {
     controleEquilibre(lignes);
     controleComptes(lignes);
     controleEtancheite(lignes);
+    controleRubrication(lignes);
+    controleNonCompensationRubriques(lignes);
     const exercice = controleExercice(e.date_ecriture);
     controleChronologie(e.journal, exercice.id, e.date_ecriture);
 
@@ -192,6 +200,7 @@ export function valider(id, utilisateur) {
       .filter((c) => c?.nature === 'CLIENT')
       .map((c) => c.numero);
     controleSoldeClients(comptesClients);
+    controleRubriquesDossiers(dossiersConcernes(lignes));
     controleRepresentationFonds();
 
     tracer(

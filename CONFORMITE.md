@@ -138,9 +138,10 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 - **Rapprochement bancaire** : clôture refusée tant qu'un écart subsiste entre solde
   rapproché et solde du relevé.
 - **Clôture d'exercice** : `controlePreCloture` énumère les obstacles — brouillons, comptes
-  d'attente non soldés, dossiers débiteurs, fonds non représentés, chaîne altérée,
-  rapprochement manquant. La clôture génère les à-nouveaux et scelle l'exercice par une
-  empreinte.
+  d'attente non soldés, dossiers débiteurs, fonds non représentés, placements rubriqués
+  incohérents, chaîne altérée, rapprochement manquant. La clôture génère les à-nouveaux et
+  scelle l'exercice par une empreinte. Les placements eux-mêmes ne font pas obstacle : ils
+  courent d'un exercice sur l'autre.
 - **Rôles** : `INSPECTEUR` dispose d'un accès en lecture intégrale et d'aucun droit d'écriture.
 
 ### 6. Restitution des données
@@ -148,8 +149,40 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 - **Export FEC** : 18 colonnes, séparateur tabulation, dates AAAAMMJJ. Brouillons exclus par
   construction. Le dossier tient lieu de compte auxiliaire pour les comptes clients.
 - **Dossier d'inspection** : balance, état des comptes clients, représentation des fonds,
-  anomalies, rapprochements, volumétrie, état de la chaîne, piste d'audit — sur un écran unique.
-- Exports CSV de la balance et de l'état des comptes clients.
+  placements rubriqués, anomalies, rapprochements, volumétrie, état de la chaîne, piste
+  d'audit — sur un écran unique.
+- Exports CSV de la balance, de l'état des comptes clients et des placements rubriqués.
+
+### 7. Placements de fonds clients en compte rubriqué
+
+Les fonds qu'un office détient durablement pour un dossier — séquestre, succession, prix de
+vente en attente de formalités — peuvent être placés sur un compte de dépôt ouvert par
+sous-comptes nominatifs, dit **compte rubriqué** (512600). Les règles qui en découlent sont
+bloquantes : elles refusent la comptabilisation, elles ne se contentent pas de la signaler.
+
+| Règle | Mise en œuvre | Preuve |
+|---|---|---|
+| Rubrication nominative : les fonds placés restent rattachés à un dossier identifié | `controleRubrication` : toute ligne portée sur un compte marqué `rubrique` désigne le dossier propriétaire. Un mouvement sans dossier est refusé | test « un mouvement sur un compte rubrique sans dossier designe est refuse » |
+| On ne place que les fonds du dossier | `controleRubriquesDossiers` : après comptabilisation, la rubrique d'un dossier n'excède jamais les fonds que l'office lui doit. Le contrôle est rejoué dès que le compte client bouge, de sorte qu'une restitution laissant un placement ouvert est elle aussi refusée | tests « placer plus que les fonds detenus pour le dossier est refuse » et « restituer la totalite des fonds en laissant un placement ouvert est refuse » |
+| Une rubrique n'est jamais débitrice | Même contrôle : retirer d'une rubrique plus qu'il n'y a été placé est refusé | test « retirer plus que le placement du dossier est refuse » |
+| Les produits financiers du placement reviennent au dossier qui les a produits | L'inscription des produits d'un compte de dépôt clients en produit de l'office est déjà refusée par `controleEtancheite`. `controleNonCompensationRubriques` ajoute l'autre moitié de la règle : une écriture ne peut pas mouvementer la rubrique d'un dossier et le compte client d'un **autre** dossier | tests « l appropriation des produits du placement par l office est refusee » et « le placement d un dossier ne peut pas alimenter le compte client d un autre » |
+| Un dossier ne se clôt pas sur un placement ouvert | `cloreDossier` examine la rubrique avant le solde du compte client : des fonds placés sont des fonds détenus | test « un dossier dont les fonds sont encore places ne peut pas etre clos » |
+
+**État de contrôle.** `etatPlacements()` présente, dossier par dossier, les fonds placés, les
+fonds détenus, la part non placée et les produits affectés, et confronte la somme des
+rubriques au solde des comptes rubriqués : un écart signifie que des fonds placés ne sont
+rattachés à aucun dossier. L'état figure au dossier d'inspection, s'exporte en CSV et alimente
+trois anomalies — `RUBRIQUES_NON_VENTILEES`, `PLACEMENT_SANS_PROVISION`, `RUBRIQUE_DEBITRICE`.
+
+**Signalement.** Des produits financiers inscrits au résultat de l'office alors que des fonds
+clients sont placés déclenchent l'anomalie `PRODUITS_FINANCIERS_OFFICE` : l'origine de ces
+produits doit être justifiée. Le signalement n'est pas bloquant — l'office perçoit légitimement
+les intérêts de son propre compte — mais il est porté au dossier d'inspection.
+
+**Convention de lecture.** Est tenu pour *produit affecté* à un dossier tout crédit de son
+compte client porté par une écriture qui débite, dans le même mouvement, une rubrique de ce
+dossier. C'est la forme que prend l'inscription des intérêts d'un placement. Cette convention
+figure parmi les points à arbitrer ci-dessous.
 
 ---
 
@@ -176,6 +209,12 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 4. **Durée de conservation** et modalités de sauvegarde de la base.
 5. **Rapprochement obligatoire** : la clôture exige aujourd'hui un rapprochement clos à la
    date de fin d'exercice pour chaque compte rapprochable.
+6. **Comptes rubriqués** : la liste des comptes de placement nominatifs (512600 aujourd'hui)
+   doit correspondre aux comptes réellement ouverts auprès de l'établissement teneur. Trois
+   points restent à trancher : les produits des fonds rubriqués reviennent-ils en totalité au
+   dossier en Nouvelle-Calédonie ; la convention retenue pour identifier un produit affecté
+   (cf. partie II, § 7) est-elle celle attendue d'un contrôle ; le dénouement du placement
+   doit-il précéder la clôture du dossier, comme le logiciel l'impose aujourd'hui.
 
 ---
 

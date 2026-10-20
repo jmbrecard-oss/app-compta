@@ -61,11 +61,18 @@ chronologie du journal, étanchéité office/clients, solde client jamais débit
 représentation permanente des fonds clients. Un refus annule toute l'écriture et
 la laisse en brouillon, avec le motif exact.
 
+**Placements de fonds clients.** Les fonds placés en compte rubriqué restent rattachés
+nominativement à leur dossier : un mouvement sans dossier désigné est refusé, un dossier
+ne peut pas voir placer plus que ce qu'il détient ni retirer plus qu'il n'a placé, et les
+produits du placement reviennent au dossier qui les a produits. Un état de contrôle
+rapproche la somme des rubriques du solde des comptes de placement.
+
 **Rapprochement bancaire.** Pointage des mouvements, calcul du solde rapproché,
 clôture refusée tant qu'un écart subsiste.
 
 **États.** Balance, grand livre, journaux, compte de résultat, bilan, état des
-comptes clients, état de représentation des fonds. Exports FEC (18 colonnes) et CSV.
+comptes clients, état de représentation des fonds, état des placements rubriqués.
+Exports FEC (18 colonnes) et CSV.
 
 **Inspection.** Un écran rassemble ce qu'un contrôle demande : volumétrie, état de
 la chaîne d'inaltérabilité, anomalies classées par gravité, exercices, piste
@@ -100,6 +107,7 @@ src/
     controles.js      règles de conformité — le cœur du dispositif
     ecritures.js      cycle brouillon → comptabilisation → contre-passation
     dossiers.js       dossiers et comptes clients individualisés
+    placements.js     comptes rubriqués, placements et produits affectés
     rapprochement.js  rapprochement bancaire
     lettrage.js       lettrage des comptes de tiers
     cloture.js        exercices, pré-clôture, à-nouveaux
@@ -108,7 +116,7 @@ src/
     fec.js            export FEC et CSV
   server.js           API HTTP et service des fichiers statiques
 public/               interface (HTML/CSS/JS, sans framework)
-test/                 21 tests de conformité
+test/                 35 tests de conformité
 ```
 
 ## Exploitation

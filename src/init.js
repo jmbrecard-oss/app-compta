@@ -30,10 +30,16 @@ export function initialiser({
     }
 
     for (const c of PLAN_COMPTABLE) {
-      if (un('SELECT numero FROM comptes WHERE numero = $n', { n: c.numero })) continue;
+      if (un('SELECT numero FROM comptes WHERE numero = $n', { n: c.numero })) {
+        // Colonne ajoutee apres coup : on aligne le marqueur sur le plan
+        // comptable de reference, sans toucher au reste de la fiche.
+        exec('UPDATE comptes SET rubrique = $r WHERE numero = $n AND rubrique <> $r',
+          { r: c.rubrique, n: c.numero });
+        continue;
+      }
       exec(
-        `INSERT INTO comptes (numero, intitule, classe, type, nature, sens_normal, lettrable, rapprochable, collectif)
-         VALUES ($numero, $intitule, $classe, $type, $nature, $sens_normal, $lettrable, $rapprochable, $collectif)`,
+        `INSERT INTO comptes (numero, intitule, classe, type, nature, sens_normal, lettrable, rapprochable, collectif, rubrique)
+         VALUES ($numero, $intitule, $classe, $type, $nature, $sens_normal, $lettrable, $rapprochable, $collectif, $rubrique)`,
         c,
       );
     }

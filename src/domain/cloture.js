@@ -1,6 +1,7 @@
 import { un, tous, exec, transaction } from '../db.js';
 import { tracer } from '../audit.js';
 import { ErreurConformite, etatRepresentationFonds } from './controles.js';
+import { etatPlacements } from './placements.js';
 import { verifierChaineEcritures, creerBrouillon, valider } from './ecritures.js';
 import { sha256 } from '../hash.js';
 
@@ -59,6 +60,22 @@ export function controlePreCloture(exerciceId) {
   const fonds = etatRepresentationFonds();
   if (!fonds.conforme) {
     obstacles.push({ code: 'FONDS_NON_REPRESENTES', message: `Fonds clients non representes : deficit de ${-fonds.ecart} XPF.` });
+  }
+
+  // Les placements rubriques ne sont pas denoues a la cloture : ils courent
+  // d'un exercice sur l'autre. Seule leur incoherence fait obstacle.
+  const placements = etatPlacements();
+  if (!placements.ventilation_conforme) {
+    obstacles.push({
+      code: 'RUBRIQUES_NON_VENTILEES',
+      message: `Comptes rubriques : ${placements.ecart_ventilation} XPF ne sont rattaches a aucun dossier.`,
+    });
+  }
+  for (const d of placements.dossiers.filter((x) => !x.conforme)) {
+    obstacles.push({
+      code: 'PLACEMENT_INCOHERENT',
+      message: `Dossier ${d.reference} : ${d.place} XPF places pour ${d.fonds_dus} XPF detenus.`,
+    });
   }
 
   const chaine = verifierChaineEcritures();

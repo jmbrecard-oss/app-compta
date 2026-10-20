@@ -1,6 +1,7 @@
 import { un, tous, exec, transaction } from '../db.js';
 import { tracer } from '../audit.js';
 import { ErreurConformite } from './controles.js';
+import { controleDossierDenoue, rubriqueDuDossier } from './placements.js';
 import { PREFIXE_COMPTE_CLIENT } from '../pcn.js';
 
 /**
@@ -63,6 +64,7 @@ export function lireDossier(id) {
     total_credit: d.total_credit,
     solde: d.solde,
     solde_client: -d.solde, // positif = fonds detenus pour le client
+    place_en_rubrique: rubriqueDuDossier(id),
     mouvements: tous(
       `SELECT e.date_ecriture, e.journal, e.numero, e.statut, e.piece_ref,
               l.libelle, l.debit, l.credit, l.lettrage, e.id AS ecriture_id
@@ -88,13 +90,16 @@ export function listerDossiers({ statut, recherche } = {}) {
 }
 
 /**
- * Cloture d'un dossier : refusee tant que le compte client n'est pas solde.
- * Un dossier dont le compte presente un solde ne peut pas etre archive :
- * des fonds appartenant au client resteraient detenus sans affectation.
+ * Cloture d'un dossier : refusee tant que des fonds du dossier restent places
+ * en compte rubrique, puis tant que le compte client n'est pas solde.
+ *
+ * Le placement est examine en premier : un dossier dont la rubrique n'est pas
+ * denouee detient encore des fonds, que le compte client soit solde ou non.
  */
 export function cloreDossier(id, utilisateur) {
   const d = un('SELECT * FROM v_soldes_dossiers WHERE id = $id', { id });
   if (!d) throw new ErreurConformite('INTROUVABLE', `Dossier ${id} introuvable.`);
+  controleDossierDenoue(d);
   if (d.solde !== 0) {
     throw new ErreurConformite(
       'DOSSIER_NON_SOLDE',
