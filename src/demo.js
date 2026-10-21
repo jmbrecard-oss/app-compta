@@ -13,6 +13,8 @@
  *   node src/demo.js --mdp motdepasse
  */
 
+import { writeFileSync } from 'node:fs';
+
 import { ouvrirBase, un, exec, transaction, fermerBase } from './db.js';
 import { initialiser } from './init.js';
 import { ouvrirDossier } from './domain/dossiers.js';
@@ -241,7 +243,25 @@ function construire() {
   pointer(rappro.id, rappro.en_suspens.map((m) => m.id), true, utilisateur);
   cloreRapprochement(rappro.id, utilisateur);
 
-  return { dossiers, comptabilisees, brouillons, mdp: init.compte_initial?.motDePasse ?? '(inchange)' };
+  const mdpFinal = init.compte_initial?.motDePasse ?? '(compte deja existant, mot de passe inchange)';
+
+  // Les accès sont ecrits sur disque : la commande qui installe la demo et
+  // celle qui la lance sont distinctes, et le mot de passe ne doit pas se
+  // perdre entre les deux.
+  const fichierAcces = new URL('../data/demo-acces.txt', import.meta.url).pathname;
+  writeFileSync(
+    fichierAcces,
+    `Jeu de demonstration - DONNEES FICTIVES\n`
+    + `Installe le ${new Date().toISOString().slice(0, 16).replace('T', ' a ')}\n\n`
+    + `  Adresse      http://127.0.0.1:7420\n`
+    + `  Identifiant  notaire\n`
+    + `  Mot de passe ${mdpFinal}\n\n`
+    + `Base jetable : data/demo.sqlite. Supprimez-la et relancez "npm run demo"\n`
+    + `pour repartir a zero.\n`,
+    'utf8',
+  );
+
+  return { dossiers, comptabilisees, brouillons, mdp: mdpFinal, fichierAcces };
 }
 
 const r = construire();
@@ -253,9 +273,9 @@ Jeu de demonstration installe. DONNEES FICTIVES.
   Dossiers    ${r.dossiers.length}
   Ecritures   ${r.comptabilisees} comptabilisees, ${r.brouillons} brouillon en attente
 
-  Connexion   notaire / ${r.mdp}
+  Connexion   notaire — mot de passe note dans data/demo-acces.txt
 
-Lancer l interface :  npm start
+Lancer l interface :  npm run demo:start
 `);
 }
 fermerBase();
