@@ -1,5 +1,6 @@
 import { un, tous } from '../db.js';
-import { etatRepresentationFonds, etatComptesDebiteurs, anomalies } from '../domain/controles.js';
+import { etatRepresentationFonds, etatComptesDebiteurs, etatDeboursAReverser, anomalies } from '../domain/controles.js';
+import { baremeCourant, baremeFictif, listerTaxes, lireTaxe, taxeEnVigueur, taxeAnnulee } from '../domain/tarif.js';
 
 const bornes = (p = {}) => ({
   depuis: p.depuis ?? null,
@@ -158,6 +159,96 @@ export function etatComptesClients() {
 }
 
 /**
+ * Etat des taxes d'actes.
+ *
+ * Rapproche la liquidation du tarif de sa traduction comptable : ce qui est
+ * encore en projet, ce qui est arrete sans etre comptabilise - donc facture au
+ * client sans produit enregistre - et ce qui est comptabilise.
+ */
+export function etatTaxes({ dossier_id } = {}) {
+  const toutes = listerTaxes({ dossier_id });
+  const bareme = baremeCourant();
+  const somme = (liste, champ) => liste.reduce((s, t) => s + t[champ], 0);
+  // Une taxe dont l'ecriture a ete contre-passee ne compte plus dans les
+  // produits : son montant a ete extourne.
+  const comptabilisees = toutes.filter(taxeEnVigueur);
+  const annulees = toutes.filter(taxeAnnulee);
+
+  return {
+    arrete_le: new Date().toISOString().slice(0, 10),
+    bareme: {
+      code: bareme.meta.code,
+      libelle: bareme.meta.libelle,
+      statut: bareme.meta.statut,
+      texte_reference: bareme.meta.texte_reference,
+      a_valider_par: bareme.meta.a_valider_par,
+      avertissement: bareme.meta.avertissement,
+      empreinte: bareme.empreinte,
+      fictif: baremeFictif(bareme),
+    },
+    projets: toutes.filter((t) => t.statut === 'PROJET'),
+    a_comptabiliser: toutes.filter((t) => t.statut === 'ARRETEE'),
+    comptabilisees,
+    annulees,
+    totaux: {
+      emoluments: somme(comptabilisees, 'total_emoluments'),
+      tgc: somme(comptabilisees, 'total_tgc'),
+      debours: somme(comptabilisees, 'total_debours'),
+      du: somme(comptabilisees, 'total_du'),
+    },
+    // Une taxe liquidee sur un bareme qui n'est plus celui du jour reste
+    // verifiable : son empreinte designe le fichier qui l'a produite.
+    baremes_anterieurs: [...new Set(toutes.map((t) => t.bareme_empreinte))].filter((e) => e !== bareme.empreinte),
+  };
+}
+
+/**
+ * Compte definitif du client.
+ *
+ * Etat remis au client a la fin du dossier : ce qu'il a verse, ce que l'acte
+ * lui a coute - emoluments, TGC, debours reverses pour son compte - et le
+ * solde qui lui revient ou qui reste du.
+ */
+export function compteDefinitif(dossierId) {
+  const d = un('SELECT * FROM v_soldes_dossiers WHERE id = $id', { id: dossierId });
+  if (!d) return null;
+  const fiche = un('SELECT * FROM dossiers WHERE id = $id', { id: dossierId });
+
+  const taxes = listerTaxes({ dossier_id: dossierId }).map((t) => lireTaxe(t.id));
+  // Seules les taxes dont l'ecriture est toujours en vigueur sont dues par le
+  // client : une taxe contre-passee a ete annulee, et le solde detenu en tient
+  // deja compte. Les additionner contredirait le solde affiche juste a cote.
+  const comptabilisees = taxes.filter(taxeEnVigueur);
+  const somme = (champ) => comptabilisees.reduce((s, t) => s + t[champ], 0);
+
+  return {
+    dossier: fiche,
+    arrete_le: new Date().toISOString().slice(0, 10),
+    recu: d.total_credit,          // fonds recus du client ou pour son compte
+    impute: d.total_debit,         // taxes, debours regles, restitutions
+    solde_detenu: d.total_credit - d.total_debit,
+    taxes,
+    total_taxe: somme('total_du'),
+    detail: {
+      emoluments: somme('total_emoluments'),
+      tgc: somme('total_tgc'),
+      debours: somme('total_debours'),
+    },
+    taxes_en_vigueur: comptabilisees,
+    taxes_annulees: taxes.filter(taxeAnnulee),
+    taxes_non_comptabilisees: taxes.filter((t) => t.statut !== 'COMPTABILISEE'),
+    mouvements: tous(
+      `SELECT e.date_ecriture, e.journal, e.numero, e.piece_ref, l.libelle, l.debit, l.credit
+       FROM lignes l JOIN ecritures e ON e.id = l.ecriture_id
+       WHERE l.compte = $c AND e.statut <> 'BROUILLON'
+       ORDER BY e.date_ecriture, e.id, l.ordre`,
+      { c: fiche.compte_client },
+    ),
+    bareme_fictif: taxes.some((t) => t.bareme_statut !== 'VALIDE') || baremeFictif(),
+  };
+}
+
+/**
  * Dossier d'inspection : ensemble des etats remis lors du controle de
  * comptabilite diligente par la Chambre.
  */
@@ -172,6 +263,8 @@ export function dossierInspection(p = {}) {
     comptes_clients: etatComptesClients(),
     representation_fonds: etatRepresentationFonds(),
     comptes_debiteurs: etatComptesDebiteurs(),
+    taxes: etatTaxes(),
+    debours_a_reverser: etatDeboursAReverser(),
     anomalies: anomalies(),
     comptes_attente: tous(`SELECT * FROM v_soldes WHERE nature = 'ATTENTE'`),
     rapprochements: tous(

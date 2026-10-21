@@ -1,0 +1,107 @@
+{
+  "bareme": {
+    "code": "NC-DEMO-1",
+    "libelle": "Barème de démonstration — chiffres fictifs, sans valeur réglementaire",
+    "statut": "FICTIF",
+    "avertissement": "ATTENTION — AUCUN DES MONTANTS, TAUX ET TRANCHES DE CE FICHIER N'EST ISSU D'UN TEXTE. Ils sont inventés pour permettre de faire fonctionner et de tester le moteur de calcul. Le tarif des notaires de Nouvelle-Calédonie est fixé par le décret n° 78-321/CG du 26 septembre 1978, dont le texte n'a pas été consulté lors de la rédaction de ce fichier. Avant toute utilisation réelle, ce fichier doit être remplacé ligne à ligne par le barème en vigueur, et la substitution validée par la Chambre des notaires de Nouvelle-Calédonie. Tant que le statut vaut FICTIF, l'application signale une anomalie critique sur le tableau de bord et dans le dossier d'inspection.",
+    "texte_reference": "Décret n° 78-321/CG du 26 septembre 1978 (texte NON consulté)",
+    "a_valider_par": "Chambre des notaires de Nouvelle-Calédonie",
+    "devise": "XPF",
+    "decimales": 0,
+    "en_vigueur_du": "1978-09-26",
+    "en_vigueur_au": null
+  },
+
+  "arrondi": "SUPERIEUR",
+
+  "prestations": [
+    {
+      "code": "EMO-VENTE",
+      "libelle": "Emolument proportionnel - vente d immeuble",
+      "categorie": "EMOLUMENT",
+      "compte": "706100",
+      "assiette_libelle": "Prix exprime dans l acte",
+      "mode": "TRANCHES",
+      "tranches": [
+        { "jusqu_a": 1000000, "taux_ppm": 40000 },
+        { "jusqu_a": 3000000, "taux_ppm": 20000 },
+        { "jusqu_a": 10000000, "taux_ppm": 12000 },
+        { "jusqu_a": null, "taux_ppm": 8000 }
+      ],
+      "minimum": 20000,
+      "tgc": "TGC11"
+    },
+    {
+      "code": "EMO-SUCCESSION",
+      "libelle": "Emolument proportionnel - succession",
+      "categorie": "EMOLUMENT",
+      "compte": "706100",
+      "assiette_libelle": "Actif successoral brut",
+      "mode": "TRANCHES",
+      "tranches": [
+        { "jusqu_a": 2000000, "taux_ppm": 20000 },
+        { "jusqu_a": 10000000, "taux_ppm": 11000 },
+        { "jusqu_a": null, "taux_ppm": 6000 }
+      ],
+      "minimum": 15000,
+      "tgc": "TGC11"
+    },
+    {
+      "code": "EMO-FORMALITE",
+      "libelle": "Emolument de formalite",
+      "categorie": "EMOLUMENT",
+      "compte": "706200",
+      "mode": "FIXE",
+      "montant": 12000,
+      "quantite_autorisee": true,
+      "tgc": "TGC11"
+    },
+    {
+      "code": "EMO-NEGOCIATION",
+      "libelle": "Emolument de negociation",
+      "categorie": "EMOLUMENT",
+      "compte": "706300",
+      "assiette_libelle": "Prix de negociation",
+      "mode": "PROPORTIONNEL",
+      "taux_ppm": 50000,
+      "minimum": 50000,
+      "tgc": "TGC11"
+    },
+    {
+      "code": "HONO-LIBRE",
+      "libelle": "Honoraire libre - acte non tarife",
+      "categorie": "EMOLUMENT",
+      "compte": "706400",
+      "mode": "LIBRE",
+      "tgc": "TGC11"
+    },
+    {
+      "code": "DROIT-ENREGISTREMENT",
+      "libelle": "Droits d enregistrement a reverser au Tresor",
+      "categorie": "TAXE",
+      "compte": "448600",
+      "assiette_libelle": "Prix exprime dans l acte",
+      "mode": "PROPORTIONNEL",
+      "taux_ppm": 40000,
+      "tgc": "TGC0"
+    },
+    {
+      "code": "TAXE-HYPOTHECAIRE",
+      "libelle": "Taxe hypothecaire et salaire du conservateur",
+      "categorie": "TAXE",
+      "compte": "448700",
+      "assiette_libelle": "Prix exprime dans l acte",
+      "mode": "PROPORTIONNEL",
+      "taux_ppm": 6000,
+      "tgc": "TGC0"
+    },
+    {
+      "code": "DEBOURS",
+      "libelle": "Debours avances pour le compte du client",
+      "categorie": "DEBOURS",
+      "compte": "448800",
+      "mode": "LIBRE",
+      "tgc": "TGC0"
+    }
+  ]
+}

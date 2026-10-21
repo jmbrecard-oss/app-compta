@@ -213,3 +213,10 @@ details.bloc summary { cursor: pointer; font-weight: 600; }
 
 .vide { color: var(--texte-doux); font-style: italic; padding: 1rem 0; }
 .empreinte { font-family: var(--mono); font-size: .72rem; color: var(--texte-doux); word-break: break-all; }
+
+/* ------------------------------------------------------ taxe des actes */
+/* Les avertissements de barème sont longs : ils doivent rester lisibles. */
+.alerte { line-height: 1.45; }
+a.pastille { text-decoration: none; }
+a.pastille:hover { background: var(--accent-clair); color: var(--accent); }
+.liquidation-ligne { color: var(--texte-doux); }

@@ -1,6 +1,7 @@
 import { un, tous, exec, transaction } from '../db.js';
 import { empreinteEcriture, GENESE } from '../hash.js';
 import { tracer } from '../audit.js';
+import { COMPTES_EMOLUMENTS, COMPTES_DEBOURS_TIERS } from '../pcn.js';
 import {
   ErreurConformite,
   controleEquilibre,
@@ -11,6 +12,7 @@ import {
   alerteSoldeClients,
   controleRepresentationFonds,
   controleEtancheite,
+  controleRattachementActe,
 } from './controles.js';
 
 const EST_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -29,12 +31,37 @@ function normaliserLignes(lignes) {
   }));
 }
 
-/** Rattache automatiquement chaque ligne de compte client a son dossier. */
-function rattacherDossiers(lignes) {
+const COMPTES_DE_L_ACTE = [...COMPTES_EMOLUMENTS, ...COMPTES_DEBOURS_TIERS];
+
+/**
+ * Rattache chaque ligne a son dossier.
+ *
+ * 1. Une ligne de compte client appartient au dossier de ce compte.
+ * 2. Une ligne d'emolument ou de debours a reverser se rapporte a l'acte :
+ *    elle herite du dossier de l'ecriture lorsque celle-ci n'en designe qu'un
+ *    seul. Si l'ecriture en concerne plusieurs, ou aucun, la ligne reste sans
+ *    dossier et la comptabilisation la refuse : c'est alors a la saisie de
+ *    designer le dossier ligne par ligne.
+ *
+ * Les a-nouveaux sont exclus de l'heritage : ils reprennent des soldes de
+ * comptes, et le solde collectif d'un compte de debours ne se rattache a aucun
+ * acte en particulier.
+ */
+function rattacherDossiers(lignes, { journal = null, dossier_id = null } = {}) {
   for (const l of lignes) {
     if (l.dossier_id) continue;
     const d = un('SELECT id FROM dossiers WHERE compte_client = $c', { c: l.compte });
     if (d) l.dossier_id = d.id;
+  }
+  if (journal === 'AN') return lignes;
+
+  const designes = new Set(lignes.map((l) => l.dossier_id).filter(Boolean));
+  if (dossier_id) designes.add(Number(dossier_id));
+  if (designes.size === 1) {
+    const [dossier] = [...designes];
+    for (const l of lignes) {
+      if (!l.dossier_id && COMPTES_DE_L_ACTE.includes(l.compte)) l.dossier_id = dossier;
+    }
   }
   return lignes;
 }
@@ -52,7 +79,7 @@ export function creerBrouillon(saisie, utilisateur) {
   if (!j) throw new ErreurConformite('JOURNAL_INCONNU', `Journal ${journal} inconnu ou desactive.`);
 
   const exercice = controleExercice(date_ecriture);
-  const lignes = rattacherDossiers(normaliserLignes(saisie.lignes));
+  const lignes = rattacherDossiers(normaliserLignes(saisie.lignes), { journal, dossier_id: saisie.dossier_id });
   controleMontantsEntiers(lignes);
   controleComptes(lignes);
 
@@ -97,7 +124,10 @@ export function modifierBrouillon(id, saisie, utilisateur) {
   if (e.statut !== 'BROUILLON') {
     throw new ErreurConformite('NON_MODIFIABLE', 'Ecriture comptabilisee : seule la contre-passation est possible.');
   }
-  const lignes = rattacherDossiers(normaliserLignes(saisie.lignes ?? []));
+  const lignes = rattacherDossiers(normaliserLignes(saisie.lignes ?? []), {
+    journal: e.journal,
+    dossier_id: saisie.dossier_id ?? e.dossier_id,
+  });
   controleMontantsEntiers(lignes);
   controleComptes(lignes);
   const exercice = controleExercice(saisie.date_ecriture ?? e.date_ecriture);
@@ -160,6 +190,7 @@ export function valider(id, utilisateur) {
     controleEquilibre(lignes);
     controleComptes(lignes);
     controleEtancheite(lignes);
+    controleRattachementActe(lignes, e);
     const exercice = controleExercice(e.date_ecriture);
     controleChronologie(e.journal, exercice.id, e.date_ecriture);
 
@@ -247,9 +278,13 @@ export function contrepasser(id, { date_ecriture, motif }, utilisateur) {
       utilisateur,
     );
 
+    // Le lien vers l'ecriture d'origine est pose AVANT la comptabilisation :
+    // les controles doivent savoir qu'ils examinent une extourne, et non une
+    // ecriture nouvelle.
+    exec('UPDATE ecritures SET contrepassation_de = $id WHERE id = $m', { id, m: miroir.id });
+
     const validee = valider(miroir.id, utilisateur);
     exec(`UPDATE ecritures SET statut = 'CONTREPASSEE', contrepassee_par = $m WHERE id = $id`, { m: validee.id, id });
-    exec('UPDATE ecritures SET contrepassation_de = $id WHERE id = $m', { id, m: validee.id });
     tracer(utilisateur.identifiant, 'CONTRE_PASSATION', 'ecriture', id, `vers ${validee.id} - ${motif}`);
     return { origine: lire(id), contrepassation: lire(validee.id) };
   });

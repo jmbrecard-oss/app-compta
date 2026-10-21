@@ -1,4 +1,7 @@
 import { un, tous } from '../db.js';
+import { ErreurConformite } from '../erreurs.js';
+import { COMPTES_EMOLUMENTS, COMPTES_DEBOURS_TIERS } from '../pcn.js';
+import { baremeCourant, baremeFictif } from './bareme.js';
 
 /**
  * Controles de conformite de la comptabilite notariale.
@@ -8,14 +11,8 @@ import { un, tous } from '../db.js';
  * alimentent le tableau de bord et le dossier d'inspection.
  */
 
-export class ErreurConformite extends Error {
-  constructor(code, message, details = {}) {
-    super(message);
-    this.name = 'ErreurConformite';
-    this.code = code;
-    this.details = details;
-  }
-}
+// Reexportee : tout le domaine l'importe historiquement depuis ce module.
+export { ErreurConformite };
 
 // --------------------------------------------------------------------------
 // Controles bloquants, appliques a la validation d'une ecriture
@@ -273,6 +270,88 @@ export function controleEtancheite(lignes) {
   }
 }
 
+/**
+ * Rattachement de la taxe de l'acte a un dossier.
+ *
+ * L'article 2 de l'arrete du 27 janvier 2006 soumet a l'examen de conformite
+ * la taxe des actes et tous les modules generant des ecritures. Cela suppose
+ * de pouvoir remonter de chaque emolument et de chaque debours a l'acte qui
+ * l'a produit : un produit d'emolument ou une somme encaissee pour le compte
+ * du Tresor ne peut donc pas etre comptabilise sans dossier.
+ *
+ * Seuls les a-nouveaux echappent a la regle : ils reprennent des soldes de
+ * comptes, pas des actes.
+ */
+export function controleRattachementActe(lignes, ecriture = {}) {
+  if (ecriture.journal === 'AN') return;
+
+  // Une contre-passation n'ajoute aucun produit : elle annule l'existant, et
+  // reprend tel quel le rattachement de l'ecriture d'origine. L'y soumettre
+  // rendrait definitivement incorrigible toute ecriture comptabilisee avant
+  // l'entree en vigueur de ce controle - la contre-passation etant le seul
+  // moyen de corriger, et la base interdisant de retoucher une ligne validee.
+  if (ecriture.contrepassation_de) return;
+
+  // Le controle porte sur CHAQUE ligne concernee, et non sur l'ecriture prise
+  // globalement : une ligne de compte client presente ailleurs dans l'ecriture
+  // ne rattache pas a l'acte le produit d'emolument qui l'accompagne.
+  for (const l of lignes) {
+    if (l.dossier_id) continue;
+    if (COMPTES_EMOLUMENTS.includes(l.compte)) {
+      throw new ErreurConformite(
+        'EMOLUMENT_HORS_DOSSIER',
+        `Le compte d emoluments ${l.compte} est mouvemente sans dossier : la taxe d un acte se `
+        + `rattache au dossier qui l a genere. Designez-le sur la ligne lorsque l ecriture en concerne plusieurs.`,
+        { compte: l.compte, ordre: l.ordre },
+      );
+    }
+    if (COMPTES_DEBOURS_TIERS.includes(l.compte)) {
+      throw new ErreurConformite(
+        'DEBOURS_HORS_DOSSIER',
+        `Le compte ${l.compte} porte des sommes encaissees pour le compte d autrui : la ligne doit `
+        + `designer le dossier au titre duquel elles sont dues.`,
+        { compte: l.compte, ordre: l.ordre },
+      );
+    }
+  }
+}
+
+/**
+ * Justification des comptes de tiers a reverser (448600, 448700, 448800).
+ * Etat de controle des sommes dues au Tresor et aux tiers, dossier par
+ * dossier : un solde debiteur signifie que l'office a reverse plus qu'il n a
+ * encaisse pour le compte du client.
+ */
+export function etatDeboursAReverser() {
+  // Liste de numeros de comptes figee dans le plan comptable, jamais saisie :
+  // SQLite ne sait pas lier une liste a un parametre nomme.
+  const LISTE = COMPTES_DEBOURS_TIERS.map((c) => `'${c}'`).join(',');
+
+  const comptes = tous(
+    `SELECT numero, intitule, solde FROM v_soldes WHERE numero IN (${LISTE})`,
+  ).map((c) => ({ ...c, du_au_tiers: -c.solde }));
+
+  const parDossier = tous(
+    `SELECT l.compte, d.id AS dossier_id, d.reference, d.intitule,
+            IFNULL(SUM(l.credit - l.debit), 0) AS du_au_tiers
+     FROM lignes l
+     JOIN ecritures e ON e.id = l.ecriture_id AND e.statut <> 'BROUILLON'
+     JOIN dossiers d  ON d.id = l.dossier_id
+     WHERE l.compte IN (${LISTE})
+     GROUP BY l.compte, d.id
+     HAVING du_au_tiers <> 0
+     ORDER BY l.compte, d.reference`,
+  );
+
+  return {
+    arrete_le: new Date().toISOString().slice(0, 10),
+    comptes,
+    total_du_au_tiers: comptes.reduce((s, c) => s + c.du_au_tiers, 0),
+    par_dossier: parDossier,
+    avances_par_l_office: parDossier.filter((d) => d.du_au_tiers < 0),
+  };
+}
+
 // --------------------------------------------------------------------------
 // Controles signales : tableau de bord et dossier d'inspection
 // --------------------------------------------------------------------------
@@ -306,6 +385,27 @@ export function anomalies() {
       code: 'COMPTE_ATTENTE_NON_SOLDE',
       objet: `Compte ${c.numero}`,
       message: `Compte d attente non solde : ${c.solde} XPF. A imputer avant la cloture.`,
+    });
+  }
+
+  if (baremeFictif()) {
+    const b = baremeCourant();
+    liste.push({
+      gravite: 'CRITIQUE',
+      code: 'BAREME_NON_VALIDE',
+      objet: `Bareme ${b.meta.code}`,
+      message: `Le bareme en service est declare ${b.meta.statut} : ses taux et tranches ne sont issus d aucun texte. `
+        + `Toute taxe liquidee a partir de ce bareme est sans valeur. Remplacer le fichier par le tarif en vigueur `
+        + `(${b.meta.texte_reference}) et le faire valider par : ${b.meta.a_valider_par}.`,
+    });
+  }
+
+  for (const d of etatDeboursAReverser().avances_par_l_office) {
+    liste.push({
+      gravite: 'MAJEURE',
+      code: 'DEBOURS_AVANCES',
+      objet: `Dossier ${d.reference}`,
+      message: `Compte ${d.compte} : ${-d.du_au_tiers} XPF reverses au-dela de ce qui a ete encaisse pour le dossier.`,
     });
   }
 

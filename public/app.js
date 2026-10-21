@@ -210,6 +210,22 @@ const MODELES = [
       { compte: '512500', sens: 'credit' },
     ],
   },
+  {
+    nom: 'Reversement des droits d\'enregistrement au Trésor',
+    journal: 'BQC',
+    lignes: [
+      { compte: '448600', sens: 'debit', dossier: true },
+      { compte: '512500', sens: 'credit' },
+    ],
+  },
+  {
+    nom: 'Reversement de la taxe hypothécaire',
+    journal: 'BQC',
+    lignes: [
+      { compte: '448700', sens: 'debit', dossier: true },
+      { compte: '512500', sens: 'credit' },
+    ],
+  },
   { nom: 'Écriture libre', journal: 'OD', lignes: [{ compte: '' }, { compte: '' }] },
 ];
 
@@ -276,11 +292,18 @@ function optionsComptes(selection = '') {
     .join('');
 }
 
+/**
+ * La valeur est l'identifiant du dossier, pas son compte : une ligne peut
+ * devoir designer un dossier sans etre imputee a son compte client - c'est le
+ * cas des droits d'enregistrement et des debours a reverser.
+ */
 function optionsDossiers(selection = '') {
   return `<option value="">—</option>` + etat.dossiers
-    .map((d) => `<option value="${d.compte_client}" ${d.compte_client === selection ? 'selected' : ''}>${echapper(d.reference)} — ${echapper(d.intitule)}</option>`)
+    .map((d) => `<option value="${d.id}" data-compte="${d.compte_client}" ${String(d.id) === String(selection) ? 'selected' : ''}>${echapper(d.reference)} — ${echapper(d.intitule)}</option>`)
     .join('');
 }
+
+const estCompteClient = (numero) => /^411\d{5}$/.test(numero ?? '');
 
 function ajouterLigne(modele = {}) {
   const tr = document.createElement('tr');
@@ -293,9 +316,12 @@ function ajouterLigne(modele = {}) {
     <td><button type="button" class="lien l-suppr">✕</button></td>`;
   $('#lignes').append(tr);
 
-  // Le choix d'un dossier impute automatiquement son compte client.
+  // Le choix d'un dossier impute son compte client, sauf si la ligne porte
+  // deja un autre compte : on se contente alors de la rattacher au dossier.
   $('.l-dossier', tr).addEventListener('change', (e) => {
-    if (e.target.value) $('.l-compte', tr).value = e.target.value;
+    const compte = $('.l-compte', tr);
+    const choisi = e.target.selectedOptions[0]?.dataset.compte;
+    if (choisi && (!compte.value || estCompteClient(compte.value))) compte.value = choisi;
     recalculer();
   });
   // Debit et credit s'excluent sur une meme ligne.
@@ -312,6 +338,7 @@ function appliquerModele(index) {
   for (const l of m.lignes) {
     const tr = ajouterLigne(l);
     if (l.client) $('.l-compte', tr).title = 'Sélectionner le dossier';
+    if (l.dossier) $('.l-dossier', tr).title = 'Dossier au titre duquel la somme est due — obligatoire';
   }
   recalculer();
 }
@@ -319,6 +346,7 @@ function appliquerModele(index) {
 function lireLignes() {
   return $$('#lignes tr').map((tr) => ({
     compte: $('.l-compte', tr).value,
+    dossier_id: Number($('.l-dossier', tr).value) || null,
     libelle: $('.l-libelle', tr).value,
     debit: Number($('.l-debit', tr).value || 0),
     credit: Number($('.l-credit', tr).value || 0),
@@ -516,6 +544,7 @@ async function detailDossier(id) {
           <span class="pastille ${d.solde > 0 ? 'critique' : 'ok'}">
             ${d.solde > 0 ? `Débiteur de ${xpf(d.solde)} XPF` : `Fonds détenus : ${xpf(-d.solde)} XPF`}
           </span>
+          <button class="secondaire" id="compte-definitif">Compte définitif</button>
           ${d.statut === 'OUVERT' && d.solde === 0 ? `<button class="secondaire" id="clore-dossier">Clore</button>` : ''}
         </div>
       </header>
@@ -537,11 +566,295 @@ async function detailDossier(id) {
         </table>
       </div>
     </div>`;
+  $('#compte-definitif')?.addEventListener('click', garde(() => compteDefinitif(id)));
   $('#clore-dossier')?.addEventListener('click', garde(async () => {
     await api(`/dossiers/${id}/clore`, { methode: 'POST', corps: {} });
     message('Dossier clos.');
     await vueDossiers();
   }));
+}
+
+/**
+ * Compte définitif : ce que le client a versé, ce que l'acte lui a coûté,
+ * ce qui lui revient. C'est l'état remis au client en fin de dossier.
+ */
+async function compteDefinitif(id) {
+  const c = await api(`/etats/compte-definitif/${id}`);
+  $('#detail-dossier').insertAdjacentHTML('beforeend', `
+    <div class="carte" style="margin-top:1rem">
+      <header>
+        <h2>Compte définitif — ${echapper(c.dossier.reference)}</h2>
+        <a href="/api/export/compte-definitif/${id}" class="pastille minuscule">export CSV</a>
+      </header>
+      ${c.bareme_fictif ? `<div class="alerte"><strong>Barème non validé</strong>
+        Les émoluments portés à ce compte ont été liquidés sur un barème sans valeur réglementaire.
+        Ce document ne peut pas être remis à un client.</div>` : ''}
+      <table>
+        <tbody>
+          <tr><th>Versé par le client (ou pour son compte)</th><td class="nb">${xpf(c.recu)}</td></tr>
+          <tr><th>Émoluments</th><td class="nb">${xpf(c.detail.emoluments)}</td></tr>
+          <tr><th>TGC sur émoluments</th><td class="nb">${xpf(c.detail.tgc)}</td></tr>
+          <tr><th>Débours et taxes</th><td class="nb">${xpf(c.detail.debours)}</td></tr>
+          <tr><th>Total taxé</th><td class="nb">${xpf(c.total_taxe)}</td></tr>
+          <tr><th>Total imputé au dossier</th><td class="nb">${xpf(c.impute)}</td></tr>
+          <tr><th>Solde détenu pour le client</th>
+            <td class="${c.solde_detenu < 0 ? 'nb negatif' : 'nb'}"><strong>${xpf(c.solde_detenu)}</strong></td></tr>
+        </tbody>
+      </table>
+      ${c.taxes_non_comptabilisees.length ? `<div class="alerte majeure"><strong>Taxes non comptabilisées</strong>
+        ${c.taxes_non_comptabilisees.length} taxe(s) de ce dossier ne sont pas passées en comptabilité :
+        le compte ci-dessus ne les reflète pas.</div>` : ''}
+      ${c.taxes_annulees.length ? `<div class="alerte information"><strong>Taxes annulées</strong>
+        ${c.taxes_annulees.map((t) => `${echapper(t.reference)} (${xpf(t.total_du)} XPF)`).join(', ')} —
+        écriture contre-passée, montant exclu du compte ci-dessus.</div>` : ''}
+    </div>`);
+}
+
+// ============================================================== taxe des actes
+
+/** Bandeau permanent : un barème non validé n'a aucune portée. */
+function avertissementBareme(b) {
+  if (!b.fictif) {
+    return `<div class="alerte information"><strong>Barème ${echapper(b.code)}</strong>
+      ${echapper(b.libelle)} — référence : ${echapper(b.texte_reference)}.</div>`;
+  }
+  return `<div class="alerte"><strong>Barème non validé — ${echapper(b.code)}</strong>
+    ${echapper(b.avertissement)}</div>`;
+}
+
+const CATEGORIE_LIBELLE = { EMOLUMENT: 'Émolument', DEBOURS: 'Débours', TAXE: 'Taxe' };
+
+async function vueTaxe() {
+  const [bareme, etats, dossiers] = await Promise.all([
+    api('/tarif/bareme'),
+    api('/etats/taxes'),
+    api('/dossiers?statut=OUVERT'),
+  ]);
+  etat.bareme = bareme;
+
+  const tableauTaxes = (liste, actions) => liste.length === 0
+    ? '<p class="vide">Aucune.</p>'
+    : `<table>
+        <thead><tr><th>Réf.</th><th>Dossier</th><th>Acte</th><th>Date</th>
+          <th class="nb">Émoluments</th><th class="nb">TGC</th><th class="nb">Débours</th>
+          <th class="nb">Total dû</th><th></th></tr></thead>
+        <tbody>${liste.map((t) => `
+          <tr>
+            <td class="compte"><button class="lien" data-taxe="${t.id}">${echapper(t.reference)}</button></td>
+            <td>${echapper(t.dossier_reference)}</td>
+            <td>${echapper(t.acte)}</td>
+            <td>${dateFr(t.date_acte)}</td>
+            <td class="nb">${xpf(t.total_emoluments)}</td>
+            <td class="nb">${xpf(t.total_tgc)}</td>
+            <td class="nb">${xpf(t.total_debours)}</td>
+            <td class="nb"><strong>${xpf(t.total_du)}</strong></td>
+            <td>${actions(t)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+
+  $('#contenu').innerHTML = `
+    ${avertissementBareme(bareme)}
+
+    <div class="carte">
+      <header>
+        <h2>Taxer un acte</h2>
+        <span class="pastille minuscule">arrondi ${echapper(bareme.arrondi.toLowerCase())}</span>
+      </header>
+      <form id="form-taxe">
+        <div class="barre-outils">
+          <label style="min-width:220px">Dossier
+            <select name="dossier_id" required>
+              <option value="">—</option>
+              ${dossiers.map((d) => `<option value="${d.id}">${echapper(d.reference)} — ${echapper(d.intitule)}</option>`).join('')}
+            </select>
+          </label>
+          <label style="min-width:260px">Acte <input name="acte" required placeholder="Vente MARTIN / DUPONT"></label>
+          <label>Date de l'acte <input name="date_acte" type="date" value="${aujourdhui()}" required></label>
+        </div>
+        <div class="defilant">
+          <table class="lignes-saisie">
+            <thead><tr><th>Prestation du barème</th><th class="nb">Assiette</th><th class="nb">Quantité</th>
+              <th class="nb">Montant libre</th><th class="nb">Liquidation</th><th></th></tr></thead>
+            <tbody id="lignes-taxe"></tbody>
+          </table>
+        </div>
+        <div class="barre-outils" style="margin:.6rem 0 0">
+          <button type="button" id="ajouter-prestation" class="secondaire">Ajouter une prestation</button>
+          <button type="submit">Enregistrer le projet de taxe</button>
+        </div>
+      </form>
+      <div id="liquidation"></div>
+    </div>
+
+    <div class="carte" style="margin-top:1rem">
+      <header><h2>À comptabiliser</h2><span class="pastille ${etats.a_comptabiliser.length ? 'majeure' : 'ok'}">${etats.a_comptabiliser.length}</span></header>
+      <p class="vide" style="font-style:normal;padding:0 0 .6rem">
+        Taxe arrêtée et remise au client, mais pas encore passée en comptabilité : le produit n'est pas enregistré.</p>
+      ${tableauTaxes(etats.a_comptabiliser, (t) => `<button class="lien" data-comptabiliser="${t.id}">Comptabiliser</button>`)}
+    </div>
+
+    <div class="carte" style="margin-top:1rem">
+      <header><h2>Projets</h2><span class="pastille minuscule">${etats.projets.length}</span></header>
+      ${tableauTaxes(etats.projets, (t) => `
+        <button class="lien" data-arreter="${t.id}">Arrêter</button>
+        <button class="lien" data-supprimer-taxe="${t.id}">Supprimer</button>`)}
+    </div>
+
+    <div class="carte" style="margin-top:1rem">
+      <header>
+        <h2>Taxes comptabilisées</h2>
+        <span class="pastille minuscule">${xpf(etats.totaux.du)} XPF</span>
+      </header>
+      ${tableauTaxes(etats.comptabilisees, () => '')}
+    </div>
+
+    ${etats.annulees.length ? `
+      <div class="carte" style="margin-top:1rem">
+        <header><h2>Taxes annulées</h2><span class="pastille minuscule">${etats.annulees.length}</span></header>
+        <p class="vide" style="font-style:normal;padding:0 0 .6rem">
+          Taxes dont l'écriture a été contre-passée. Elles restent en base, inaltérées,
+          mais ne comptent plus dans les produits ni dans le compte du client.</p>
+        ${tableauTaxes(etats.annulees, () => '')}
+      </div>` : ''}
+
+    <div id="detail-taxe"></div>`;
+
+  const lignes = $('#lignes-taxe');
+  const ajouterLigne = () => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><select name="code">${bareme.prestations.map((p) => `
+        <option value="${echapper(p.code)}" data-mode="${p.mode}">
+          ${echapper(p.libelle)} — ${CATEGORIE_LIBELLE[p.categorie]}
+        </option>`).join('')}</select></td>
+      <td><input name="assiette" type="number" min="0" step="1" class="nb" value="0"></td>
+      <td><input name="quantite" type="number" min="1" step="1" class="nb" value="1"></td>
+      <td><input name="montant" type="number" min="0" step="1" class="nb" value="0"></td>
+      <td class="nb liquidation-ligne">—</td>
+      <td><button type="button" class="lien" data-retirer>retirer</button></td>`;
+    tr.querySelector('[data-retirer]').addEventListener('click', () => { tr.remove(); liquider(); });
+    tr.querySelectorAll('input, select').forEach((c) => c.addEventListener('change', liquider));
+    lignes.append(tr);
+    liquider();
+  };
+
+  const prestationsSaisies = () => $$('#lignes-taxe tr').map((tr) => ({
+    code: tr.querySelector('[name=code]').value,
+    mode: tr.querySelector('[name=code]').selectedOptions[0]?.dataset.mode,
+    assiette: Number(tr.querySelector('[name=assiette]').value || 0),
+    quantite: Number(tr.querySelector('[name=quantite]').value || 1),
+    montant: Number(tr.querySelector('[name=montant]').value || 0),
+  }));
+
+  /** Une ligne dont l'assiette n'est pas encore saisie n'est pas liquidable. */
+  const incomplete = (p) => (p.mode === 'TRANCHES' || p.mode === 'PROPORTIONNEL') && !p.assiette;
+
+  /** Liquidation en direct : l'utilisateur voit le calcul avant d'enregistrer. */
+  const liquider = garde(async () => {
+    const prestations = prestationsSaisies();
+    if (!prestations.length) {
+      $('#liquidation').innerHTML = '';
+      return;
+    }
+    if (prestations.some(incomplete)) {
+      $$('#lignes-taxe tr').forEach((tr, i) => {
+        tr.querySelector('.liquidation-ligne').textContent = incomplete(prestations[i]) ? 'assiette ?' : '';
+      });
+      $('#liquidation').innerHTML = '<p class="vide">Renseignez l\'assiette de chaque émolument proportionnel.</p>';
+      return;
+    }
+    const t = await api('/tarif/simulation', { methode: 'POST', corps: { acte: 'simulation', prestations } });
+    $$('#lignes-taxe tr').forEach((tr, i) => {
+      tr.querySelector('.liquidation-ligne').textContent = xpf(t.lignes[i].montant);
+    });
+    $('#liquidation').innerHTML = `
+      <h3>Liquidation</h3>
+      <table>
+        <thead><tr><th>Prestation</th><th>Justification du calcul</th><th class="nb">Montant</th><th class="nb">TGC</th></tr></thead>
+        <tbody>${t.lignes.map((l) => `
+          <tr><td>${echapper(l.libelle)}</td>
+            <td class="compte">${echapper(l.detail)}</td>
+            <td class="nb">${xpf(l.montant)}</td>
+            <td class="nb">${l.tgc_montant ? xpf(l.tgc_montant) : ''}</td></tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr><th colspan="2">Émoluments</th><th class="nb">${xpf(t.total_emoluments)}</th><th class="nb">${xpf(t.total_tgc)}</th></tr>
+          <tr><th colspan="2">Débours et taxes</th><th class="nb">${xpf(t.total_debours)}</th><th></th></tr>
+          <tr><th colspan="2">Total dû par le client</th><th class="nb">${xpf(t.total_du)}</th><th></th></tr>
+        </tfoot>
+      </table>`;
+  });
+
+  $('#ajouter-prestation').addEventListener('click', ajouterLigne);
+  ajouterLigne();
+
+  $('#form-taxe').addEventListener('submit', garde(async (ev) => {
+    ev.preventDefault();
+    const f = Object.fromEntries(new FormData(ev.target));
+    await api('/taxes', {
+      methode: 'POST',
+      corps: {
+        dossier_id: Number(f.dossier_id),
+        acte: f.acte,
+        date_acte: f.date_acte,
+        prestations: prestationsSaisies(),
+      },
+    });
+    message('Projet de taxe enregistré.');
+    await vueTaxe();
+  }));
+
+  $$('[data-arreter]').forEach((b) => b.addEventListener('click', garde(async () => {
+    await api(`/taxes/${b.dataset.arreter}/arreter`, { methode: 'POST', corps: {} });
+    message('Taxe arrêtée : elle est désormais figée.');
+    await vueTaxe();
+  })));
+
+  $$('[data-supprimer-taxe]').forEach((b) => b.addEventListener('click', garde(async () => {
+    await api(`/taxes/${b.dataset.supprimerTaxe}`, { methode: 'DELETE' });
+    message('Projet supprimé.');
+    await vueTaxe();
+  })));
+
+  $$('[data-comptabiliser]').forEach((b) => b.addEventListener('click', garde(async () => {
+    const r = await api(`/taxes/${b.dataset.comptabiliser}/comptabiliser`, { methode: 'POST', corps: {} });
+    message(`Taxe comptabilisée : écriture ${r.ecriture.journal}-${r.ecriture.numero}.`);
+    await vueTaxe();
+  })));
+
+  $$('[data-taxe]').forEach((b) => b.addEventListener('click', garde(() => detailTaxe(b.dataset.taxe))));
+}
+
+async function detailTaxe(id) {
+  const t = await api(`/taxes/${id}`);
+  $('#detail-taxe').innerHTML = `
+    <div class="carte" style="margin-top:1rem">
+      <header>
+        <h2>${echapper(t.reference)} — ${echapper(t.acte)}</h2>
+        <span class="pastille ${t.statut === 'COMPTABILISEE' ? 'ok' : 'minuscule'}">${echapper(t.statut.toLowerCase())}</span>
+      </header>
+      <p>Dossier ${echapper(t.dossier_reference)} — ${echapper(t.dossier_intitule)}, acte du ${dateFr(t.date_acte)}.</p>
+      <div class="defilant"><table>
+        <thead><tr><th>Prestation</th><th>Nature</th><th class="compte">Compte</th>
+          <th>Justification du calcul</th><th class="nb">Montant</th><th class="nb">TGC</th></tr></thead>
+        <tbody>${t.lignes.map((l) => `
+          <tr>
+            <td>${echapper(l.libelle)}</td>
+            <td>${CATEGORIE_LIBELLE[l.categorie] ?? echapper(l.categorie)}</td>
+            <td class="compte">${echapper(l.compte)}</td>
+            <td class="compte">${echapper(l.detail)}</td>
+            <td class="nb">${xpf(l.montant)}</td>
+            <td class="nb">${l.tgc_montant ? xpf(l.tgc_montant) : ''}</td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot><tr><th colspan="4">Total dû</th><th class="nb">${xpf(t.total_du)}</th><th></th></tr></tfoot>
+      </table></div>
+      <h3>Barème appliqué</h3>
+      <p>${echapper(t.bareme_code)} — statut <strong>${echapper(t.bareme_statut)}</strong>.
+        ${t.bareme_statut !== 'VALIDE' ? 'Cette taxe est sans valeur réglementaire.' : ''}</p>
+      <p class="empreinte">empreinte du barème : ${echapper(t.bareme_empreinte)}</p>
+    </div>`;
 }
 
 // ============================================================ rapprochement
@@ -811,6 +1124,42 @@ async function vueInspection() {
     </div>
 
     <div class="carte" style="margin-top:1rem">
+      <h2>Taxe des actes</h2>
+      ${avertissementBareme(d.taxes.bareme)}
+      <div class="grille">
+        <div><span class="libelle-indicateur">Émoluments comptabilisés</span><div class="indicateur">${xpf(d.taxes.totaux.emoluments)}</div></div>
+        <div><span class="libelle-indicateur">TGC collectée</span><div class="indicateur">${xpf(d.taxes.totaux.tgc)}</div></div>
+        <div><span class="libelle-indicateur">Débours et taxes</span><div class="indicateur">${xpf(d.taxes.totaux.debours)}</div></div>
+        <div><span class="libelle-indicateur">Taxes arrêtées non comptabilisées</span>
+          <div class="indicateur ${d.taxes.a_comptabiliser.length ? 'negatif' : ''}">${d.taxes.a_comptabiliser.length}</div></div>
+      </div>
+      <p class="empreinte">Empreinte du barème en service : ${echapper(d.taxes.bareme.empreinte)}</p>
+    </div>
+
+    <div class="carte" style="margin-top:1rem">
+      <h2>Sommes encaissées pour le compte de tiers</h2>
+      <p>Droits d'enregistrement, taxe hypothécaire et débours restant à reverser, arrêtés au ${dateFr(d.debours_a_reverser.arrete_le)}.</p>
+      <table>
+        <thead><tr><th class="compte">Compte</th><th>Intitulé</th><th class="nb">Dû aux tiers</th></tr></thead>
+        <tbody>${d.debours_a_reverser.comptes.map((c) => `
+          <tr><td class="compte">${echapper(c.numero)}</td><td>${echapper(c.intitule)}</td>
+            <td class="${c.du_au_tiers < 0 ? 'nb negatif' : 'nb'}">${xpf(c.du_au_tiers)}</td></tr>`).join('')}
+        </tbody>
+        <tfoot><tr><th colspan="2">Total</th><th class="nb">${xpf(d.debours_a_reverser.total_du_au_tiers)}</th></tr></tfoot>
+      </table>
+      ${d.debours_a_reverser.par_dossier.length ? `
+        <h3>Justification dossier par dossier</h3>
+        <div class="defilant"><table>
+          <thead><tr><th class="compte">Compte</th><th>Dossier</th><th>Intitulé</th><th class="nb">Dû aux tiers</th></tr></thead>
+          <tbody>${d.debours_a_reverser.par_dossier.map((x) => `
+            <tr><td class="compte">${echapper(x.compte)}</td><td>${echapper(x.reference)}</td>
+              <td>${echapper(x.intitule)}</td>
+              <td class="${x.du_au_tiers < 0 ? 'nb negatif' : 'nb'}">${xpf(x.du_au_tiers)}</td></tr>`).join('')}
+          </tbody>
+        </table></div>` : '<p class="vide">Aucune somme restant à reverser.</p>'}
+    </div>
+
+    <div class="carte" style="margin-top:1rem">
       <h2>Anomalies relevées</h2>
       ${d.anomalies.length ? d.anomalies.map(carteAnomalie).join('')
         : '<div class="alerte information"><strong>Conforme</strong>Aucune anomalie.</div>'}
@@ -868,6 +1217,7 @@ const VUES = {
   saisie: vueSaisie,
   ecritures: vueEcritures,
   dossiers: vueDossiers,
+  taxe: vueTaxe,
   rapprochement: vueRapprochement,
   etats: vueEtats,
   inspection: vueInspection,

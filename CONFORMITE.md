@@ -76,8 +76,9 @@ discipline à adopter :
 
 **b) Le périmètre d'examen est plus large que le noyau actuel.** L'article 2 impose que la
 vérification porte sur la **taxe des actes** et sur **tous les modules générant des écritures**.
-Le calcul des émoluments — aujourd'hui hors périmètre — devra donc être couvert, et en
-Nouvelle-Calédonie sur la base du décret n° 78-321/CG, non du tarif métropolitain.
+Le calcul des émoluments doit donc être couvert, et en Nouvelle-Calédonie sur la base du
+décret n° 78-321/CG, non du tarif métropolitain. Le moteur de liquidation existe désormais
+(Partie II, section 4) ; **le barème qu'il applique reste à établir à partir de ce texte**.
 
 **c) L'interlocuteur est un commissaire aux comptes**, à mandater et à rémunérer, pas une
 instance professionnelle à solliciter. Son examen suppose des **tests en conditions
@@ -122,7 +123,44 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 | Pas de rétro-datation | `controleChronologie` refuse une écriture antérieure à la dernière comptabilisée dans le même journal |
 | Exercice clos verrouillé | `controleExercice` refuse toute écriture datée dans un exercice clos |
 
-### 4. Tenue de la comptabilité
+### 4. Taxe des actes et tarif
+
+L'article 2 de l'arrêté de 2006 soumet à l'examen de conformité **la taxe des actes** et
+**tous les modules dès lors qu'ils génèrent des écritures comptables**. Le barème applicable
+en Nouvelle-Calédonie relève du **décret n° 78-321/CG du 26 septembre 1978**, dont le texte
+n'a pas été consulté. Le logiciel ne contient donc aucun chiffre de tarif : il fournit un
+**moteur de barèmes paramétrable**, alimenté par un fichier de données séparé.
+
+> **Le barème livré (`src/baremes/bareme-nc.json`) est fictif.** Ses taux, tranches et
+> minimums sont inventés, uniquement pour faire fonctionner et tester le moteur. Il porte
+> `"statut": "FICTIF"` et doit être remplacé ligne à ligne par le tarif en vigueur, la
+> substitution étant validée par la Chambre. Tant qu'il est fictif, l'application remonte une
+> anomalie **critique** au tableau de bord et au dossier d'inspection, et le compte définitif
+> du client porte la mention qu'il ne peut pas lui être remis.
+
+| Règle | Mise en œuvre | Preuve |
+|---|---|---|
+| Aucun chiffre de tarif dans le code | Taux, tranches, minimums, comptes d'imputation, taux de TGC et règle d'arrondi lus dans un fichier de données. `COMPTA_BAREME` désigne le fichier en service ; un fichier remplacé est repris sans redémarrage | [`src/domain/bareme.js`](src/domain/bareme.js), [`src/baremes/bareme-nc.json`](src/baremes/bareme-nc.json) |
+| Un barème mal formé n'est jamais utilisé à moitié | `validerBareme` : tranches strictement croissantes, dernière tranche ouverte, taux entiers en parties par million, catégorie, mode et compte d'imputation contrôlés | tests « tranches non croissantes », « dernière tranche bornée », « taux non entier » |
+| Aucun flottant, aucun arrondi silencieux | Liquidation entière en `BigInt`. L'arrondi n'intervient **qu'une fois**, sur le total de la prestation, selon le mode inscrit dans le barème — la direction de l'arrondi est une question de tarif, pas d'implémentation | test « l'arrondi n'intervient qu'une fois […] et il est paramétrable » |
+| Une assiette absente ne vaut pas zéro | Un émolument proportionnel liquidé sans assiette facturerait le minimum du barème sur un champ vide : refusé | test « une assiette non entière, négative ou nulle est refusée » |
+| La liquidation se justifie devant un contrôle | Chaque ligne conserve le détail tranche par tranche et la valeur exacte avant arrondi | test « la justification de la liquidation est exacte au centième » |
+| Une taxe arrêtée est conforme au barème | `arreterTaxe` recalcule chaque ligne depuis le barème et refuse toute divergence. Le recalcul repart des **entrées** conservées — assiette, quantité, montant libre saisi — jamais du résultat enregistré, faute de quoi il se contenterait de relire ce qu'il doit vérifier | tests « une taxe dont une ligne a été retouchée ne peut pas être arrêtée », « le recalcul de l'arrêté repart des entrées, pas du résultat enregistré » |
+| Une taxe arrêtée est figée | Déclencheurs `trg_taxe_maj_interdite`, `trg_taxe_suppr_interdite` et équivalents sur les lignes — **y compris à l'insertion** : ajouter une ligne après coup altère la taxe sans passer par un `UPDATE`. Le `statut` est lui-même verrouillé : seule la progression arrêtée → comptabilisée est permise, un retour en arrière rouvrirait tout le reste. Le verrou est dans la base | tests « une taxe comptabilisée est verrouillée dans la base, par tous les chemins », « une taxe arrêtée non comptabilisée est déjà figée » |
+| Une taxe reste vérifiable après changement de barème | Chaque taxe conserve le code, le statut et l'**empreinte SHA-256** du fichier de barème qui l'a produite | test « une taxe arrêtée porte l'empreinte du barème qui l'a produite » |
+| L'office n'avance jamais les droits ni les émoluments | L'écriture de taxe débite le compte client du dossier ; `controleSoldeClients` la refuse si le dossier n'est pas provisionné | test « la taxe d'un dossier sans provision est refusée » |
+| Émoluments et débours rattachés à l'acte | `controleRattachementActe` : contrôle **bloquant**, appliqué **ligne par ligne** — une ligne de compte client présente ailleurs dans l'écriture ne rattache pas à l'acte le produit qui l'accompagne. Aucune ligne sur 706100-706400 ni sur 448600/448700/448800 sans dossier, les à-nouveaux exceptés, qui reprennent des soldes et non des actes. Lorsque l'écriture ne désigne qu'un seul dossier, ces lignes en héritent automatiquement ; si elle en concerne plusieurs, le dossier doit être désigné sur la ligne | tests « un émolument comptabilisé hors dossier est refusé », « un débours à reverser au Trésor comptabilisé hors dossier est refusé », « un émolument ne peut pas s'abriter derrière le dossier d'une autre ligne », « un émolument hérite du dossier quand l'écriture n'en concerne qu'un » |
+| Justification des sommes dues aux tiers | `etatDeboursAReverser` : droits d'enregistrement, taxe hypothécaire et débours restant à reverser, par compte **et par dossier**. Un dossier sur lequel l'office a reversé plus qu'il n'a encaissé remonte en anomalie majeure | écran Inspection |
+| Une taxe annulée sort des produits et du compte du client | Contre-passer l'écriture de taxe n'altère pas la taxe — la table est inaltérable — mais les états s'en tiennent au statut de l'**écriture** : une taxe contre-passée est présentée à part, et ne compte plus ni dans les produits ni dans ce que le client doit. Sans quoi le compte remis au client annoncerait une taxe que la comptabilité ne porte plus, tout en affichant un solde qui la contredit | test « une taxe contre-passée sort du compte définitif et des produits » |
+| Une écriture reste toujours corrigeable | La contre-passation est exemptée du contrôle de rattachement : elle n'ajoute aucun produit, elle annule l'existant. Sans cette exemption, toute écriture comptabilisée **avant** l'entrée en vigueur du contrôle deviendrait définitivement figée — la base interdisant de retoucher une ligne validée, et la contre-passation étant le seul moyen de corriger | test « une écriture antérieure au contrôle reste contre-passable » |
+| Compte définitif du client | `compteDefinitif` : versé par le client, émoluments, TGC, débours, solde lui revenant. Le total taxé et le total imputé au dossier sont distingués : le solde doit pouvoir se justifier. Taxes non comptabilisées et taxes annulées signalées. Export CSV | test « le compte définitif du dossier récapitule provisions, émoluments et débours » |
+
+Cycle d'une taxe : **projet** (modifiable, sans effet comptable) → **arrêtée** (recalculée,
+confrontée au barème, verrouillée en base) → **comptabilisée** (une écriture lui est attachée
+et passe sans exception tous les contrôles de comptabilisation). Une taxe comptabilisée ne se
+corrige que par contre-passation de l'écriture et nouvelle taxe.
+
+### 5. Tenue de la comptabilité
 
 - Partie double contrôlée à la comptabilisation ; écriture de montant nul refusée.
 - Montants en **entiers de XPF** : le franc Pacifique n'a pas de subdivision. Tout montant
@@ -133,7 +171,7 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 - Lettrage refusé sur un lot déséquilibré.
 - Compte d'attente 471000 signalé dès qu'il n'est pas soldé, bloquant à la clôture.
 
-### 5. Contrôles périodiques
+### 6. Contrôles périodiques
 
 - **Rapprochement bancaire** : clôture refusée tant qu'un écart subsiste entre solde
   rapproché et solde du relevé.
@@ -143,7 +181,7 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
   empreinte.
 - **Rôles** : `INSPECTEUR` dispose d'un accès en lecture intégrale et d'aucun droit d'écriture.
 
-### 6. Restitution des données
+### 7. Restitution des données
 
 - **Export FEC** : 18 colonnes, séparateur tabulation, dates AAAAMMJJ. Brouillons exclus par
   construction. Le dossier tient lieu de compte auxiliaire pour les comptes clients.
@@ -157,10 +195,6 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 
 ### Hors périmètre actuel
 
-- **Tarif réglementé** : barèmes d'émoluments, débours, taxes, compte définitif client.
-  L'article 2 de l'arrêté de 2006 impose pourtant que la taxe des actes soit couverte —
-  c'est donc un **écart bloquant** pour une future attestation, à traiter sur la base du
-  décret n° 78-321/CG pour la Nouvelle-Calédonie.
 - Déclarations fiscales (TGC, résultat) et paie.
 - Gestion des actes et répertoire.
 - Archivage à valeur probante externalisé, sauvegarde hors site.
@@ -168,13 +202,27 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 
 ### Points à arbitrer avec la Chambre
 
-1. **Numérotation des comptes clients** : format retenu `411` + 5 chiffres, à confirmer.
-2. **Seuil de représentation des fonds** : couverture ≥ 100 % exigée en permanence, sans
+1. **Contenu du barème du tarif — bloquant.** Le moteur de calcul de la taxe des actes est en
+   place et couvert par des tests (Partie II, section 4), mais **le fichier de barème livré est
+   fictif**. Il doit être remplacé par le tarif du décret n° 78-321/CG du 26 septembre 1978,
+   dont le texte reste à obtenir — vraisemblablement auprès de la Chambre ou sur Juridoc — puis
+   la correspondance entre ce texte et le fichier doit être validée **ligne à ligne**. Tant que
+   ce point n'est pas réglé, aucune taxe produite par l'application n'a de valeur. Trois
+   questions se posent au passage :
+   - la **règle d'arrondi** du tarif (au franc supérieur, inférieur ou le plus proche) ;
+   - l'assujettissement à la **TGC** et les taux applicables. Le moteur n'impose
+     aucune règle : il applique à chaque prestation le taux que le fichier lui
+     attribue. Que les débours et les droits à reverser en soient exonérés — ce que
+     le fichier livré suppose — doit donc être confirmé, et non déduit du code ;
+   - les **comptes d'imputation** des droits d'enregistrement et de la taxe hypothécaire
+     (448600 et 448700 retenus ici).
+2. **Numérotation des comptes clients** : format retenu `411` + 5 chiffres, à confirmer.
+3. **Seuil de représentation des fonds** : couverture ≥ 100 % exigée en permanence, sans
    tolérance. À confirmer.
-3. **Comptes de dépôt** : la liste (512500, 512600) doit correspondre aux comptes réellement
+4. **Comptes de dépôt** : la liste (512500, 512600) doit correspondre aux comptes réellement
    ouverts auprès de l'établissement teneur.
-4. **Durée de conservation** et modalités de sauvegarde de la base.
-5. **Rapprochement obligatoire** : la clôture exige aujourd'hui un rapprochement clos à la
+5. **Durée de conservation** et modalités de sauvegarde de la base.
+6. **Rapprochement obligatoire** : la clôture exige aujourd'hui un rapprochement clos à la
    date de fin d'exercice pour chaque compte rapprochable.
 
 ---
