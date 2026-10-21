@@ -166,8 +166,9 @@ corrige que par contre-passation de l'écriture et nouvelle taxe.
 - Partie double contrôlée à la comptabilisation ; écriture de montant nul refusée.
 - Montants en **entiers de XPF** : le franc Pacifique n'a pas de subdivision. Tout montant
   non entier est refusé, aucun arrondi silencieux.
-- Plan comptable notarial adapté au territoire : TGC (3 / 6 / 11 / 22 %) au lieu de la TVA,
-  CAFAT, patente, droits d'enregistrement et taxe hypothécaire à reverser.
+- Plan comptable notarial adapté au territoire : TGC au lieu de la TVA, CAFAT, patente,
+  droits d'enregistrement et taxe hypothécaire à reverser. Les taux appliqués par les
+  contrôles ne sont pas écrits dans le code : voir le § 6 ci-dessous.
 - Journaux séparés pour la banque office (BQO) et le dépôt des fonds clients (BQC).
 - Lettrage refusé sur un lot déséquilibré.
 - Compte d'attente 471000 signalé dès qu'il n'est pas soldé, bloquant à la clôture.
@@ -209,6 +210,37 @@ une limite absente ne protège de rien.
   génère les à-nouveaux et scelle l'exercice par une empreinte.
 - **Rôles** : `INSPECTEUR` dispose d'un accès en lecture intégrale et d'aucun droit d'écriture.
 
+### 6. Taxe générale sur la consommation
+
+L'article 2 de l'arrêté de 2006 impose que l'examen de conformité porte sur **tous les
+modules générant des écritures comptables**. La TGC en fait partie : elle produit des
+écritures, elle alimente une dette envers le Trésor et son solde figure au bilan.
+
+**Les taux ne sont pas dans le code.** Ils sont lus dans
+[`src/parametres/tgc-nc.json`](src/parametres/tgc-nc.json), livré avec le statut
+`A_VALIDER` et un avertissement nominatif. Le chargeur **refuse** un fichier qui se
+déclarerait `VALIDE` sans porter la référence du texte applicable et sans que chaque taux
+soit marqué comme sourcé : un chiffre ne peut pas se présenter comme réglementaire sans sa
+source. Tant que le statut vaut `A_VALIDER`, l'état produit porte la mention qu'il est un
+document de travail, et le dossier d'inspection le signale.
+
+| Règle | Mise en œuvre | Preuve |
+|---|---|---|
+| Toute taxe comptabilisée est justifiée par une assiette et un taux en vigueur | `controleTgc` : pour chaque écriture mouvementant 445600 ou 445700, la taxe doit correspondre à un taux en vigueur appliqué à l'assiette présente dans la même écriture — produits (classe 7) pour la collectée, charges et immobilisations (classes 6 et 2) pour la déductible. Comparaison en entiers, fenêtre d'un franc pour absorber la règle d'arrondi | test « une TGC collectée qui ne correspond à aucun taux en vigueur est refusée » |
+| Pas de taxe hors de toute opération | Refus `TGC_SANS_ASSIETTE` | test « une TGC collectée sans assiette est refusée » |
+| Une écriture mêlant plusieurs taux doit être scindée | Le refus nomme le taux implicite calculé et invite à scinder : c'est ce qui rend la déclaration justifiable ligne à ligne | message de `TGC_ASSIETTE_INCOHERENTE` |
+| Une déclaration boucle sur les soldes réels | Écriture de liquidation : collectée soldée = déductible imputée + taxe portée au Trésor, sinon refus `TGC_LIQUIDATION_INCOHERENTE` | test « une déclaration dont l'arithmétique ne boucle pas est refusée » |
+| On ne déclare pas plus de taxe que la comptabilité n'en porte | `TGC_SOLDE_INSUFFISANT` : le débit de 445700, le crédit de 445600 et le règlement sur 445500 sont plafonnés par le solde du compte à la date de l'écriture | tests « une déclaration qui liquide plus de TGC que la comptabilité n'en porte est refusée » et « un règlement au Trésor supérieur à la TGC déclarée est refusé » |
+| Les à-nouveaux ne constituent pas de taxe | Le journal de type `ANOUVEAU` est hors du champ du contrôle d'assiette et de la ventilation | test « les à-nouveaux ne sont pas soumis au contrôle d'assiette » |
+| L'état déclaratif est justifié par la comptabilité | `etatTgc` ventile la taxe par taux à partir des seules écritures comptabilisées, puis confronte cette ventilation au mouvement des comptes 445600 / 445700 : tout écart et toute écriture non rattachable à un taux sont nommés | test « l'état préparatoire rapproche la ventilation du mouvement comptable » |
+| Les déclarations échues sont relancées | `periodesTgc` énumère les périodes selon la périodicité paramétrée et signale celles dont la TGC collectée n'est pas soldée au-delà du délai de dépôt. Remonté au tableau de bord, au dossier d'inspection et **en obstacle de pré-clôture** | tests « une période échue dont la TGC collectée n'est pas liquidée est signalée » et « la pré-clôture refuse un exercice dont la TGC échue n'est pas liquidée » |
+| La déclaration passe par le circuit normal | L'écriture de liquidation proposée est créée **en brouillon** : elle repasse par tous les contrôles et par la comptabilisation nominative | test « l'écriture de liquidation proposée est équilibrée et passe les contrôles » |
+
+Un crédit de TGC ne génère aucune dette : le reliquat déductible reste au bilan, en report.
+
+Restent hors périmètre : la télédéclaration elle-même, les seuils qui déterminent la
+périodicité, et le traitement d'un éventuel remboursement de crédit.
+
 ### 7. Restitution des données
 
 - **Export FEC** : 18 colonnes, séparateur tabulation, dates AAAAMMJJ. Brouillons exclus par
@@ -229,6 +261,13 @@ une limite absente ne protège de rien.
 ### Hors périmètre actuel
 
 - Déclarations fiscales (TGC, résultat) et paie.
+- **Tarif réglementé** : barèmes d'émoluments, débours, taxes, compte définitif client.
+  L'article 2 de l'arrêté de 2006 impose pourtant que la taxe des actes soit couverte —
+  c'est donc un **écart bloquant** pour une future attestation, à traiter sur la base du
+  décret n° 78-321/CG pour la Nouvelle-Calédonie.
+- **Déclarations fiscales** : la TGC dispose désormais d'un état préparatoire justifié et
+  de contrôles bloquants (Partie II, § 6) ; restent hors périmètre la télédéclaration, la
+  liasse de résultat et la paie.
 - Gestion des actes et répertoire.
 - Archivage à valeur probante externalisé, sauvegarde hors site.
 - Signature électronique et téléprocédures.
@@ -274,6 +313,10 @@ une limite absente ne protège de rien.
 6. **Durée de conservation** et modalités de sauvegarde de la base.
 7. **Rapprochement obligatoire** : la clôture exige aujourd'hui un rapprochement clos à la
    date de fin d'exercice pour chaque compte rapprochable.
+6. **Paramètres de TGC** : taux en vigueur, périodicité de déclaration, délai de dépôt,
+   règle d'arrondi et sort du crédit de TGC. Ces cinq valeurs sont livrées avec le statut
+   `A_VALIDER` ; elles relèvent de la Direction des services fiscaux de la
+   Nouvelle-Calédonie et doivent être relevées sur le texte avant toute mise en service.
 
 ---
 

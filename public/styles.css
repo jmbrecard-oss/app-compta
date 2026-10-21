@@ -256,6 +256,17 @@ tr.ligne-critique:hover > td { background: var(--critique-fond); }
     --fond: #fff; --surface: #fff; --surface-2: #fff;
     --texte: #000; --texte-doux: #333; --bord: #999;
     --accent: #000; --accent-clair: #fff;
+/* --------------------------------------------------------------- impression
+   Les états présentés à une inspection ou joints à une déclaration sont
+   imprimés : en-têtes de tableaux répétés sur chaque page, aucune colonne
+   tronquée par un défilement horizontal, aucune couleur de fond qui ferait
+   disparaître un montant sur une imprimante monochrome. */
+.impression-seule { display: none; }
+
+@media print {
+  :root {
+    --fond: #fff; --surface: #fff; --surface-2: #fff; --bord: #999;
+    --texte: #000; --texte-doux: #333; --accent: #000; --accent-clair: #fff;
     --critique: #000; --critique-fond: #fff;
     --majeure: #000; --majeure-fond: #fff;
     --ok: #000; --ok-fond: #fff;
@@ -306,4 +317,65 @@ tr.ligne-critique:hover > td { background: var(--critique-fond); }
   .alerte { border: 1px solid #000; border-left-width: 3px; background: none; color: #000; }
   .empreinte { font-size: 7.5pt; }
   .vide { font-style: italic; }
+
+  @page { margin: 14mm 12mm; }
+
+  body { background: #fff; font-size: 10.5pt; }
+
+  /* Identite de l'office en tete du document imprime. Elle reste dans le
+     flux : un bloc fixe se superposerait au contenu a chaque saut de page. */
+  .impression-seule { display: block; }
+  #entete-impression {
+    padding-bottom: 4pt;
+    margin-bottom: 8pt;
+    border-bottom: 1.5px solid var(--bord);
+    font-size: 9pt;
+  }
+  #entete-impression .titre { font-weight: 600; font-size: 11pt; }
+  #entete-impression .detail { color: var(--texte-doux); }
+
+  /* Ce qui ne s'imprime pas : navigation, commandes, messages transitoires. */
+  #menu, .utilisateur, .bandeau, .barre-outils, #bandeau-message,
+  .ecran-connexion, button, .lien { display: none !important; }
+
+  #application[hidden] { display: none !important; }
+
+  main, #contenu { display: block; max-width: none; padding: 0; margin: 0; }
+
+  /* Deux colonnes : trois cartes de 260px ne tiennent pas dans une page A4. */
+  .grille { display: grid; grid-template-columns: 1fr 1fr; gap: 6pt 14pt; }
+  .carte {
+    border: 0;
+    box-shadow: none;
+    background: #fff;
+    padding: 0;
+    margin: 0 0 8pt;
+    break-inside: auto;
+  }
+  .carte + .carte { margin-top: 10pt; }
+
+  h2 { font-size: 12pt; margin-top: 10pt; }
+  h3 { font-size: 10.5pt; break-after: avoid; }
+
+  /* Les tableaux longs se poursuivent page après page, en-tête compris. */
+  .defilant { overflow: visible !important; }
+  table { break-inside: auto; font-size: 9.5pt; width: 100%; }
+  thead { display: table-header-group; }
+  tfoot { display: table-row-group; }
+  tr { break-inside: avoid; break-after: auto; }
+  tbody tr:hover { background: none; }
+  th, td { border-bottom: 1px solid var(--bord); padding: 2.5pt 4pt; }
+  th { color: #000; }
+
+  /* Les pastilles et alertes perdent leur fond : on garde le contour. */
+  .pastille, .alerte {
+    border: 1px solid var(--bord);
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .alerte { break-inside: avoid; }
+  .indicateur { font-size: 14pt; }
+  .negatif, .indicateur.negatif { color: #000; font-weight: 700; }
+  .empreinte { font-size: 7pt; }
+  a { color: inherit; text-decoration: none; }
 }

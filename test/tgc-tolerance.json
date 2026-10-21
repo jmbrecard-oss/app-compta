@@ -1,0 +1,14 @@
+{
+  "territoire": "Territoire de test",
+  "taxe": "TGC",
+  "statut": "A_VALIDER",
+  "avertissement": "Jeu de parametres fictif, reserve aux tests.",
+  "comptes": { "collectee": "445700", "deductible": "445600", "a_decaisser": "445500" },
+  "arrondi": "PROCHE",
+  "tolerance_arrondi_xpf": 5,
+  "declaration": { "periodicite": "TRIMESTRIELLE", "jours_apres_periode": 45 },
+  "taux": [
+    { "code": "TGC0", "libelle": "Exonere", "taux_millieme": 0, "sourcee": false },
+    { "code": "TGC11", "libelle": "Taux general", "taux_millieme": 110, "sourcee": false }
+  ]
+}

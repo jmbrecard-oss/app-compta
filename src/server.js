@@ -12,6 +12,7 @@ import * as Rapprochement from './domain/rapprochement.js';
 import * as Lettrage from './domain/lettrage.js';
 import * as Cloture from './domain/cloture.js';
 import * as Tarif from './domain/tarif.js';
+import * as Tgc from './domain/tgc.js';
 import * as Etats from './reports/etats.js';
 import { registreDesEspeces } from './domain/especes.js';
 import { genererFEC, nomFichierFEC, versCSV } from './reports/fec.js';
@@ -245,6 +246,29 @@ route('GET', '/api/etats/debours-a-reverser', 'lire', async () => etatDeboursARe
 route('GET', '/api/etats/inspection', 'lire', async ({ query }) => Etats.dossierInspection(query));
 route('GET', '/api/etats/registre-especes', 'lire', async ({ query }) => registreDesEspeces(query));
 
+// ------------------------------------------------------------------------ TGC
+
+route('GET', '/api/etats/tgc', 'lire', async ({ query }) => Tgc.etatTgc(query));
+route('GET', '/api/etats/tgc/periodes', 'lire', async ({ query }) => ({
+  periodes: Tgc.periodesTgc({
+    jusqu: query.jusqu ?? null,
+    limite: query.limite ? Number(query.limite) : undefined,
+  }),
+}));
+route('GET', '/api/tgc/liquidation', 'lire', async ({ query }) => ({
+  proposition: Tgc.propositionLiquidationTgc(query),
+}));
+route('POST', '/api/tgc/liquidation', 'saisir', async ({ corps, utilisateur }) => {
+  const proposition = Tgc.propositionLiquidationTgc(corps);
+  if (!proposition) {
+    throw new ErreurConformite(
+      'TGC_RIEN_A_LIQUIDER',
+      'Aucune TGC collectee ne reste a declarer a cette date.',
+    );
+  }
+  return Ecritures.creerBrouillon(proposition, utilisateur);
+});
+
 // --------------------------------------------------------- controles et audit
 
 route('GET', '/api/controles/anomalies', 'lire', async () => anomalies());
@@ -312,6 +336,21 @@ route('GET', '/api/export/registre-especes.csv', 'lire', async ({ query, res }) 
     { titre: 'Signalement', valeur: 'signalement' },
   ]);
   texteBrut(res, 'registre-especes.csv', contenu, 'text/csv; charset=utf-8');
+route('GET', '/api/export/tgc.csv', 'lire', async ({ query, res }) => {
+  const e = Tgc.etatTgc(query);
+  const lignes = [
+    ...e.collectee.taux.map((t) => ({ sens: 'TGC collectee', ...t })),
+    ...e.deductible.taux.map((t) => ({ sens: 'TGC deductible', ...t })),
+  ];
+  const contenu = versCSV(lignes, [
+    { titre: 'Sens', valeur: 'sens' },
+    { titre: 'Taux', valeur: 'libelle' },
+    { titre: 'Taux (pour mille)', valeur: 'taux_millieme' },
+    { titre: 'Assiette (XPF)', valeur: 'assiette' },
+    { titre: 'Taxe (XPF)', valeur: 'taxe' },
+    { titre: 'Ecritures', valeur: 'ecritures' },
+  ]);
+  texteBrut(res, 'tgc.csv', contenu, 'text/csv; charset=utf-8');
   return null;
 });
 

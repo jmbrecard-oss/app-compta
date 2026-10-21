@@ -1,0 +1,15 @@
+{
+  "territoire": "Territoire de test",
+  "taxe": "TGC",
+  "statut": "VALIDE",
+  "reference": "",
+  "avertissement": "",
+  "comptes": { "collectee": "445700", "deductible": "445600", "a_decaisser": "445500" },
+  "arrondi": "PROCHE",
+  "tolerance_arrondi_xpf": 0,
+  "declaration": { "periodicite": "MENSUELLE", "jours_apres_periode": 30 },
+  "taux": [
+    { "code": "TGC0", "libelle": "Exonere", "taux_millieme": 0, "sourcee": true },
+    { "code": "TGC11", "libelle": "Taux general", "taux_millieme": 110, "sourcee": true }
+  ]
+}

@@ -15,6 +15,7 @@ import {
   controleRattachementActe,
 } from './controles.js';
 import { controleEspeces, controleCumulEspecesDossier, controleCaisseNonCreditrice } from './especes.js';
+import { controleTgc } from './tgc.js';
 
 const EST_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -193,6 +194,7 @@ export function valider(id, utilisateur) {
     controleEtancheite(lignes);
     controleRattachementActe(lignes, e);
     const especes = controleEspeces(e, lignes);
+    controleTgc(lignes, e);
     const exercice = controleExercice(e.date_ecriture);
     controleChronologie(e.journal, exercice.id, e.date_ecriture);
 

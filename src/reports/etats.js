@@ -2,6 +2,7 @@ import { un, tous } from '../db.js';
 import { etatRepresentationFonds, etatComptesDebiteurs, etatDeboursAReverser, anomalies } from '../domain/controles.js';
 import { baremeCourant, baremeFictif, listerTaxes, lireTaxe, taxeEnVigueur, taxeAnnulee } from '../domain/tarif.js';
 import { registreDesEspeces } from '../domain/especes.js';
+import { etatTgc, periodesTgc } from '../domain/tgc.js';
 
 const bornes = (p = {}) => ({
   depuis: p.depuis ?? null,
@@ -269,6 +270,8 @@ export function dossierInspection(p = {}) {
     anomalies: anomalies(),
     registre_especes: registreDesEspeces(p),
     comptes_attente: tous(`SELECT * FROM v_soldes WHERE nature = 'ATTENTE'`),
+    tgc: etatTgc(bornes(p)),
+    tgc_periodes: periodesTgc({ jusqu: bornes(p).jusqu, limite: 12 }),
     rapprochements: tous(
       `SELECT r.*, c.intitule FROM rapprochements r JOIN comptes c ON c.numero = r.compte
        ORDER BY r.date_arrete DESC LIMIT 24`,
