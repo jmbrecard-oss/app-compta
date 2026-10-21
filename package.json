@@ -4,10 +4,14 @@
   "description": "Comptabilite notariale - Nouvelle-Caledonie. Noyau comptable conforme aux regles de la profession.",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=22.5.0" },
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "start": "node src/server.js",
     "init": "node src/init.js",
-    "test": "node --test test/"
+    "test": "node --test test/",
+    "demo": "COMPTA_DB=data/demo.sqlite node src/demo.js",
+    "demo:start": "COMPTA_DB=data/demo.sqlite node src/server.js"
   }
 }
