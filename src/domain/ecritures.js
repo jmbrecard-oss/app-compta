@@ -13,6 +13,8 @@ import {
   controleRepresentationFonds,
   controleEtancheite,
   controleRattachementActe,
+  controlePieceJustificative,
+  normaliserReferencePiece,
 } from './controles.js';
 import { controleEspeces, controleCumulEspecesDossier, controleCaisseNonCreditrice } from './especes.js';
 import { controleTgc } from './tgc.js';
@@ -74,8 +76,14 @@ function rattacherDossiers(lignes, { journal = null, dossier_id = null } = {}) {
   return lignes;
 }
 
-/** Cree une ecriture en brouillon. Rien n'est comptabilise a ce stade. */
-export function creerBrouillon(saisie, utilisateur) {
+/**
+ * Cree une ecriture en brouillon. Rien n'est comptabilise a ce stade.
+ *
+ * `contrepassation_de` n'est pas lu dans la saisie : le lien d'extourne exempte
+ * du controle de double comptabilisation, il ne peut donc venir que de
+ * `contrepasser`, jamais d'un corps de requete.
+ */
+export function creerBrouillon(saisie, utilisateur, { contrepassation_de = null } = {}) {
   const { journal, date_ecriture, libelle } = saisie;
   if (!EST_DATE.test(date_ecriture ?? '')) {
     throw new ErreurConformite('DATE_INVALIDE', 'Date attendue au format AAAA-MM-JJ.');
@@ -95,16 +103,19 @@ export function creerBrouillon(saisie, utilisateur) {
     const r = exec(
       `INSERT INTO ecritures
          (exercice_id, journal, numero, date_ecriture, date_piece, piece_ref, libelle,
-          dossier_id, statut, cree_le, cree_par)
-       VALUES ($ex, $j, 0, $d, $dp, $pr, $lib, $dos, 'BROUILLON', $now, $u)`,
+          dossier_id, contrepassation_de, statut, cree_le, cree_par)
+       VALUES ($ex, $j, 0, $d, $dp, $pr, $lib, $dos, $cp, 'BROUILLON', $now, $u)`,
       {
         ex: exercice.id,
         j: journal,
         d: date_ecriture,
         dp: saisie.date_piece ?? date_ecriture,
-        pr: String(saisie.piece_ref ?? ''),
+        pr: normaliserReferencePiece(saisie.piece_ref),
         lib: String(libelle).trim(),
         dos: saisie.dossier_id ?? null,
+        // Renseigne des le brouillon : la comptabilisation doit savoir qu'elle
+        // extourne une ecriture pour accepter d'en reprendre la piece.
+        cp: contrepassation_de,
         now: new Date().toISOString(),
         u: utilisateur.identifiant,
       },
@@ -148,7 +159,7 @@ export function modifierBrouillon(id, saisie, utilisateur) {
         ex: exercice.id,
         d: saisie.date_ecriture ?? e.date_ecriture,
         dp: saisie.date_piece ?? e.date_piece,
-        pr: String(saisie.piece_ref ?? e.piece_ref),
+        pr: normaliserReferencePiece(saisie.piece_ref ?? e.piece_ref),
         lib: String(saisie.libelle ?? e.libelle).trim(),
         dos: saisie.dossier_id ?? e.dossier_id,
         id,
@@ -205,6 +216,8 @@ export function valider(id, utilisateur) {
     controleNonCompensationRubriques(lignes);
     const exercice = controleExercice(e.date_ecriture);
     controleChronologie(e.journal, exercice.id, e.date_ecriture);
+    const journal = un('SELECT * FROM journaux WHERE code = $c', { c: e.journal });
+    controlePieceJustificative({ ...e, exercice_id: exercice.id }, journal);
 
     const numero = (un(
       `SELECT IFNULL(MAX(numero), 0) AS n FROM ecritures
@@ -293,6 +306,7 @@ export function contrepasser(id, { date_ecriture, motif }, utilisateur) {
         })),
       },
       utilisateur,
+      { contrepassation_de: id },
     );
 
     // Le lien vers l'ecriture d'origine est pose AVANT la comptabilisation :

@@ -7,12 +7,12 @@ import { ouvrirBase, base, un, exec } from '../src/db.js';
 import { initialiser } from '../src/init.js';
 import { creerBrouillon, valider, contrepasser, verifierChaineEcritures } from '../src/domain/ecritures.js';
 import { ouvrirDossier, cloreDossier } from '../src/domain/dossiers.js';
-import { etatRepresentationFonds,
-  etatComptesDebiteurs, anomalies } from '../src/domain/controles.js';
+import { etatRepresentationFonds, etatComptesDebiteurs, anomalies,
+  etatJustificationPieces } from '../src/domain/controles.js';
 import { controlePreCloture } from '../src/domain/cloture.js';
 import { lettrer } from '../src/domain/lettrage.js';
 import { genererFEC } from '../src/reports/fec.js';
-import { balance } from '../src/reports/etats.js';
+import { balance, dossierInspection } from '../src/reports/etats.js';
 import { verifierChaineAudit } from '../src/audit.js';
 
 const ANNEE = new Date().getFullYear();
@@ -45,7 +45,7 @@ test('un compte client individualise est cree a l ouverture du dossier', () => {
 
 test('une ecriture desequilibree est refusee', () => {
   const b = creerBrouillon({
-    journal: 'BQC', date_ecriture: LE('03-01'), libelle: 'Desequilibre',
+    journal: 'BQC', date_ecriture: LE('03-01'), piece_ref: 'REL-03', libelle: 'Desequilibre',
     lignes: [
       { compte: '512500', debit: 100000 },
       { compte: dossier.compte_client, credit: 90000 },
@@ -72,7 +72,8 @@ test('un compte client devenu debiteur alerte sans bloquer la comptabilisation',
   // Les fonds sortent du compte de l'office, pas du depot des fonds clients,
   // de sorte que l'argent des autres clients n'est pas touche.
   const b = creerBrouillon({
-    journal: 'BQO', date_ecriture: LE('03-03'), libelle: 'Debours avance par l office',
+    journal: 'BQO', date_ecriture: LE('03-03'), piece_ref: 'AVANCE-03',
+    libelle: 'Debours avance par l office',
     lignes: [
       { compte: dossier2.compte_client, libelle: 'Debours avance', debit: 300_000 },
       { compte: '512100', libelle: 'Paiement depuis le compte office', credit: 300_000 },
@@ -125,7 +126,7 @@ test('les fonds clients restent representes par les disponibilites', () => {
 
 test('un prelevement sur les fonds clients au profit de l office est refuse', () => {
   const b = creerBrouillon({
-    journal: 'OD', date_ecriture: LE('03-04'), libelle: 'Ponction indue',
+    journal: 'OD', date_ecriture: LE('03-04'), piece_ref: 'OD-1', libelle: 'Ponction indue',
     lignes: [
       { compte: '512100', libelle: 'Vers compte office', debit: 1_000_000 },
       { compte: '512500', libelle: 'Depuis fonds clients', credit: 1_000_000 },
@@ -136,7 +137,7 @@ test('un prelevement sur les fonds clients au profit de l office est refuse', ()
 
 test('une ecriture melant fonds clients et comptes de gestion est refusee', () => {
   const b = creerBrouillon({
-    journal: 'OD', date_ecriture: LE('03-05'), libelle: 'Emoluments encaisses directement',
+    journal: 'OD', date_ecriture: LE('03-05'), piece_ref: 'OD-2', libelle: 'Emoluments encaisses directement',
     lignes: [
       { compte: '512500', libelle: 'Encaissement', debit: 200_000 },
       { compte: '706100', libelle: 'Emoluments', credit: 200_000 },
@@ -155,7 +156,7 @@ test('facturation des emoluments puis virement vers le compte office', () => {
     ],
   });
   comptabiliser({
-    journal: 'OD', date_ecriture: LE('03-07'), libelle: 'Transfert des emoluments encaisses',
+    journal: 'OD', date_ecriture: LE('03-07'), piece_ref: 'OD-3', libelle: 'Transfert des emoluments encaisses',
     lignes: [
       { compte: '512100', libelle: 'Compte office', debit: 444_000 },
       { compte: '512500', libelle: 'Fonds clients', credit: 444_000 },
@@ -174,7 +175,7 @@ test('la numerotation des journaux est continue', () => {
 
 test('une ecriture anterieure a la derniere comptabilisee est refusee', () => {
   const b = creerBrouillon({
-    journal: 'EMO', date_ecriture: LE('01-15'), libelle: 'Retrodatee',
+    journal: 'EMO', date_ecriture: LE('01-15'), piece_ref: 'F-2', libelle: 'Retrodatee',
     lignes: [
       { compte: dossier.compte_client, debit: 1000, libelle: 'x' },
       { compte: '706100', credit: 1000, libelle: 'x' },
@@ -198,7 +199,7 @@ test('une ecriture comptabilisee ne peut etre ni modifiee ni supprimee', () => {
 
 test('la correction passe par une contre-passation tracee', () => {
   const id = comptabiliser({
-    journal: 'OD', date_ecriture: LE('03-08'), libelle: 'Imputation erronee',
+    journal: 'OD', date_ecriture: LE('03-08'), piece_ref: 'OD-4', libelle: 'Imputation erronee',
     lignes: [
       { compte: '606400', libelle: 'Fournitures', debit: 50_000 },
       { compte: '401000', libelle: 'Fournisseur', credit: 50_000 },
@@ -213,7 +214,7 @@ test('la correction passe par une contre-passation tracee', () => {
 
 test('la contre-passation exige un motif', () => {
   const id = comptabiliser({
-    journal: 'OD', date_ecriture: LE('03-10'), libelle: 'Ecriture a extourner',
+    journal: 'OD', date_ecriture: LE('03-10'), piece_ref: 'OD-5', libelle: 'Ecriture a extourner',
     lignes: [
       { compte: '606400', libelle: 'x', debit: 1000 },
       { compte: '401000', libelle: 'x', credit: 1000 },
@@ -248,7 +249,7 @@ test('un dossier non solde ne peut pas etre clos', () => {
 
 test('un dossier solde peut etre clos', () => {
   comptabiliser({
-    journal: 'BQC', date_ecriture: LE('03-11'), libelle: 'Restitution du solde DUPONT',
+    journal: 'BQC', date_ecriture: LE('03-11'), piece_ref: 'REL-03', libelle: 'Restitution du solde DUPONT',
     lignes: [
       { compte: dossier.compte_client, libelle: 'Solde restitue', debit: 4_556_000 },
       { compte: '512500', libelle: 'Virement sortant', credit: 4_556_000 },
@@ -295,4 +296,128 @@ test('les anomalies remontent les brouillons et les comptes debiteurs', () => {
   const debiteur = liste.find((a) => a.code === 'SOLDE_CLIENT_DEBITEUR');
   assert.ok(debiteur, 'le compte debiteur doit figurer parmi les anomalies');
   assert.match(debiteur.message, /300000 XPF depuis le/);
+});
+
+// ---------------------------------------------------------------------------
+// Justification des ecritures par une piece
+// ---------------------------------------------------------------------------
+
+const achat = (saisie) => ({
+  journal: 'ACH',
+  lignes: [
+    { compte: '606400', piece_ref: 'P-1235', libelle: 'Fournitures', debit: 12_000 },
+    { compte: '401000', libelle: 'Fournisseur', credit: 12_000 },
+  ],
+  ...saisie,
+});
+
+test('une ecriture sans reference de piece ne peut pas etre comptabilisee', () => {
+  const b = creerBrouillon(achat({ date_ecriture: LE('04-01'), libelle: 'Achat sans facture' }), notaire);
+  refuse('PIECE_NON_REFERENCEE', () => valider(b.id, notaire));
+  assert.equal(un('SELECT statut FROM ecritures WHERE id = $id', { id: b.id }).statut, 'BROUILLON');
+
+  // Une reference reduite a des espaces ne justifie rien.
+  const vide = creerBrouillon(
+    achat({ date_ecriture: LE('04-01'), piece_ref: '   ', libelle: 'Achat sans facture' }),
+    notaire,
+  );
+  refuse('PIECE_NON_REFERENCEE', () => valider(vide.id, notaire));
+});
+
+test('une piece datee posterieurement a l ecriture est refusee', () => {
+  const b = creerBrouillon(
+    achat({ date_ecriture: LE('04-02'), date_piece: LE('04-20'), piece_ref: 'FA-100', libelle: 'Facture a venir' }),
+    notaire,
+  );
+  refuse('PIECE_POSTERIEURE', () => valider(b.id, notaire));
+});
+
+test('une date de piece hors format est refusee', () => {
+  const b = creerBrouillon(
+    achat({ date_ecriture: LE('04-02'), date_piece: '02/04/2026', piece_ref: 'FA-100', libelle: 'Facture mal datee' }),
+    notaire,
+  );
+  refuse('DATE_PIECE_INVALIDE', () => valider(b.id, notaire));
+});
+
+test('la meme facture ne peut pas etre comptabilisee deux fois dans un journal de facturation', () => {
+  comptabiliser(achat({
+    date_ecriture: LE('04-03'), date_piece: LE('04-01'), piece_ref: 'FA-101', libelle: 'Facture fournisseur',
+  }));
+  // Meme reference, casse differente : c'est la meme piece.
+  const b = creerBrouillon(achat({
+    date_ecriture: LE('04-04'), date_piece: LE('04-01'), piece_ref: 'fa-101', libelle: 'Facture ressaisie',
+  }), notaire);
+  refuse('PIECE_DEJA_COMPTABILISEE', () => valider(b.id, notaire));
+  assert.equal(un('SELECT statut FROM ecritures WHERE id = $id', { id: b.id }).statut, 'BROUILLON');
+});
+
+test('une meme reference de releve justifie plusieurs ecritures de banque', () => {
+  const frais = (jour, montant) => comptabiliser({
+    journal: 'BQO', date_ecriture: LE(jour), piece_ref: 'REL-04', libelle: 'Frais bancaires',
+    lignes: [
+      { compte: '627000', libelle: 'Commission', debit: montant },
+      { compte: '512100', libelle: 'Releve avril', credit: montant },
+    ],
+  });
+  frais('04-05', 1500);
+  frais('04-05', 800);
+  assert.equal(
+    un(`SELECT COUNT(*) AS n FROM ecritures
+        WHERE journal = 'BQO' AND piece_ref = 'REL-04' AND statut = 'VALIDEE'`).n,
+    2,
+  );
+});
+
+test('la contre-passation reprend la piece d origine sans etre tenue pour un doublon', () => {
+  const id = comptabiliser({
+    journal: 'ACH', date_ecriture: LE('04-06'), date_piece: LE('04-06'),
+    piece_ref: 'FA-102', libelle: 'Facture mal imputee',
+    lignes: [
+      { compte: '606300', libelle: 'Petit equipement', debit: 20_000 },
+      { compte: '401000', libelle: 'Fournisseur', credit: 20_000 },
+    ],
+  });
+  const r = contrepasser(id, { date_ecriture: LE('04-07'), motif: 'Compte de charge errone' }, notaire);
+  assert.equal(r.contrepassation.piece_ref, 'FA-102');
+  assert.equal(r.contrepassation.contrepassation_de, id);
+  assert.equal(r.origine.statut, 'CONTREPASSEE');
+
+  // La facture extournee peut etre reimputee sous sa reference d origine.
+  const reimpute = comptabiliser({
+    journal: 'ACH', date_ecriture: LE('04-08'), date_piece: LE('04-06'),
+    piece_ref: 'FA-102', libelle: 'Facture reimputee',
+    lignes: [
+      { compte: '606400', libelle: 'Fournitures', debit: 20_000 },
+      { compte: '401000', libelle: 'Fournisseur', credit: 20_000 },
+    ],
+  });
+  assert.equal(un('SELECT statut FROM ecritures WHERE id = $id', { id: reimpute }).statut, 'VALIDEE');
+});
+
+test('l etat de justification des pieces recense les ecritures non justifiees', () => {
+  const avant = etatJustificationPieces();
+  assert.equal(avant.sans_piece.length, 0);
+  assert.equal(avant.doublons.length, 0);
+  assert.equal(avant.piece_posterieure.length, 0);
+  assert.equal(avant.justifiees, avant.ecritures_comptabilisees);
+  assert.ok(avant.conforme);
+  // Les brouillons non justifies sont signales sans bloquer : ils ne sont pas
+  // encore comptabilises.
+  assert.ok(avant.brouillons_sans_piece.length >= 1);
+  assert.ok(dossierInspection().justification_pieces.conforme);
+
+  // Simulation d'une base heritee : la reference de piece d'une ecriture deja
+  // comptabilisee est effacee en contournant le verrou de la base.
+  const id = un(`SELECT id FROM ecritures WHERE statut = 'VALIDEE' ORDER BY id LIMIT 1`).id;
+  base().exec('DROP TRIGGER trg_ecriture_maj_interdite');
+  exec(`UPDATE ecritures SET piece_ref = '' WHERE id = $id`, { id });
+
+  const apres = etatJustificationPieces();
+  assert.equal(apres.conforme, false);
+  assert.deepEqual(apres.sans_piece.map((e) => e.id), [id]);
+  assert.equal(apres.justifiees, apres.ecritures_comptabilisees - 1);
+  assert.ok(anomalies().some((a) => a.code === 'ECRITURE_NON_JUSTIFIEE'));
+  // La reference de piece entre dans l'empreinte : l'effacement est detecte.
+  assert.equal(verifierChaineEcritures().valide, false);
 });

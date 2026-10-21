@@ -102,6 +102,10 @@ CREATE TABLE IF NOT EXISTS journaux (
   libelle             TEXT NOT NULL,
   type                TEXT NOT NULL CHECK (type IN ('BANQUE','CAISSE','ACHATS','VENTES','OD','ANOUVEAU')),
   compte_contrepartie TEXT REFERENCES comptes(numero),
+  -- 1 : une reference de piece ne peut justifier qu'une seule ecriture de ce
+  -- journal (numero de facture). 0 : une meme reference en justifie plusieurs
+  -- (releve bancaire, feuille de caisse).
+  piece_unique        INTEGER NOT NULL DEFAULT 0,
   actif               INTEGER NOT NULL DEFAULT 1
 );
 
@@ -239,7 +243,8 @@ CREATE INDEX IF NOT EXISTS idx_audit_date ON audit(horodatage);
 -- par un acces direct a la base. Seuls le chainage et la contre-passation
 -- restent modifiables.
 -- ======================================================================
-CREATE TRIGGER IF NOT EXISTS trg_ecriture_maj_interdite
+DROP TRIGGER IF EXISTS trg_ecriture_maj_interdite;
+CREATE TRIGGER trg_ecriture_maj_interdite
 BEFORE UPDATE ON ecritures
 WHEN OLD.statut IN ('VALIDEE','CONTREPASSEE')
  AND (NEW.exercice_id   <> OLD.exercice_id
@@ -248,6 +253,7 @@ WHEN OLD.statut IN ('VALIDEE','CONTREPASSEE')
    OR NEW.date_ecriture <> OLD.date_ecriture
    OR NEW.libelle       <> OLD.libelle
    OR NEW.piece_ref     <> OLD.piece_ref
+   OR IFNULL(NEW.date_piece,'') <> IFNULL(OLD.date_piece,'')
    OR IFNULL(NEW.dossier_id,-1) <> IFNULL(OLD.dossier_id,-1)
    OR IFNULL(NEW.hash,'')       <> IFNULL(OLD.hash,'')
    OR NEW.cree_par      <> OLD.cree_par)
@@ -255,14 +261,16 @@ BEGIN
   SELECT RAISE(ABORT, 'INALTERABILITE: ecriture validee, modification interdite (contre-passation obligatoire)');
 END;
 
-CREATE TRIGGER IF NOT EXISTS trg_ecriture_suppr_interdite
+DROP TRIGGER IF EXISTS trg_ecriture_suppr_interdite;
+CREATE TRIGGER trg_ecriture_suppr_interdite
 BEFORE DELETE ON ecritures
 WHEN OLD.statut IN ('VALIDEE','CONTREPASSEE')
 BEGIN
   SELECT RAISE(ABORT, 'INALTERABILITE: ecriture validee, suppression interdite');
 END;
 
-CREATE TRIGGER IF NOT EXISTS trg_ligne_maj_interdite
+DROP TRIGGER IF EXISTS trg_ligne_maj_interdite;
+CREATE TRIGGER trg_ligne_maj_interdite
 BEFORE UPDATE ON lignes
 WHEN (SELECT statut FROM ecritures WHERE id = OLD.ecriture_id) IN ('VALIDEE','CONTREPASSEE')
  AND (NEW.compte <> OLD.compte OR NEW.debit <> OLD.debit OR NEW.credit <> OLD.credit
@@ -271,20 +279,23 @@ BEGIN
   SELECT RAISE(ABORT, 'INALTERABILITE: ligne d''une ecriture validee, modification interdite');
 END;
 
-CREATE TRIGGER IF NOT EXISTS trg_ligne_suppr_interdite
+DROP TRIGGER IF EXISTS trg_ligne_suppr_interdite;
+CREATE TRIGGER trg_ligne_suppr_interdite
 BEFORE DELETE ON lignes
 WHEN (SELECT statut FROM ecritures WHERE id = OLD.ecriture_id) IN ('VALIDEE','CONTREPASSEE')
 BEGIN
   SELECT RAISE(ABORT, 'INALTERABILITE: ligne d''une ecriture validee, suppression interdite');
 END;
 
-CREATE TRIGGER IF NOT EXISTS trg_audit_immuable_maj
+DROP TRIGGER IF EXISTS trg_audit_immuable_maj;
+CREATE TRIGGER trg_audit_immuable_maj
 BEFORE UPDATE ON audit
 BEGIN
   SELECT RAISE(ABORT, 'INALTERABILITE: le journal d''audit est en ajout seul');
 END;
 
-CREATE TRIGGER IF NOT EXISTS trg_audit_immuable_suppr
+DROP TRIGGER IF EXISTS trg_audit_immuable_suppr;
+CREATE TRIGGER trg_audit_immuable_suppr
 BEFORE DELETE ON audit
 BEGIN
   SELECT RAISE(ABORT, 'INALTERABILITE: le journal d''audit est en ajout seul');

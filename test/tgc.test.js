@@ -105,7 +105,7 @@ test('une facture d emoluments dont la TGC correspond a l assiette est comptabil
 
 test('une TGC collectee qui ne correspond a aucun taux en vigueur est refusee', () => {
   const b = creerBrouillon({
-    journal: 'EMO', date_ecriture: LE('01-11'), libelle: 'Emoluments taxes a 10 %',
+    journal: 'EMO', date_ecriture: LE('01-11'), piece_ref: 'P-5015', libelle: 'Emoluments taxes a 10 %',
     lignes: [
       { compte: dossier.compte_client, libelle: 'Emoluments TTC', debit: 440_000 },
       { compte: '706100', libelle: 'Emoluments', credit: 400_000 },
@@ -118,7 +118,7 @@ test('une TGC collectee qui ne correspond a aucun taux en vigueur est refusee', 
 
 test('une TGC collectee sans assiette est refusee', () => {
   const b = creerBrouillon({
-    journal: 'OD', date_ecriture: LE('01-11'), libelle: 'TGC sans produit',
+    journal: 'OD', date_ecriture: LE('01-11'), piece_ref: 'P-4725', libelle: 'TGC sans produit',
     lignes: [
       { compte: '606400', libelle: 'Fournitures', debit: 44_000 },
       { compte: '445700', libelle: 'TGC de nulle part', credit: 44_000 },
@@ -149,7 +149,7 @@ test('l arrondi au franc le plus proche ou au franc inferieur est admis', () => 
 
 test('un ecart superieur au franc d arrondi est refuse', () => {
   const b = creerBrouillon({
-    journal: 'EMO', date_ecriture: LE('01-13'), libelle: 'TGC minoree de deux francs',
+    journal: 'EMO', date_ecriture: LE('01-13'), piece_ref: 'P-0662', libelle: 'TGC minoree de deux francs',
     lignes: [
       { compte: dossier.compte_client, libelle: 'TTC', debit: 13_701 },
       { compte: '706200', libelle: 'Emoluments', credit: 12_345 },
@@ -171,7 +171,7 @@ test('la TGC deductible est controlee sur l assiette des achats', () => {
   assert.equal(solde('445600'), 11_000);
 
   const b = creerBrouillon({
-    journal: 'ACH', date_ecriture: LE('01-16'), libelle: 'TGC deductible gonflee',
+    journal: 'ACH', date_ecriture: LE('01-16'), piece_ref: 'P-1879', libelle: 'TGC deductible gonflee',
     lignes: [
       { compte: '606400', libelle: 'Fournitures', debit: 100_000 },
       { compte: '445600', libelle: 'TGC deductible', debit: 25_000 },
@@ -184,7 +184,7 @@ test('la TGC deductible est controlee sur l assiette des achats', () => {
 test('les a-nouveaux ne sont pas soumis au controle d assiette', () => {
   // Le journal des a-nouveaux reprend des soldes : il ne constitue pas de TGC.
   const b = creerBrouillon({
-    journal: 'AN', date_ecriture: LE('01-01'), libelle: 'Reprise de solde de TGC',
+    journal: 'AN', date_ecriture: LE('01-01'), piece_ref: 'P-7719', libelle: 'Reprise de solde de TGC',
     lignes: [
       { compte: '445700', libelle: 'A nouveau TGC collectee', debit: 7_000 },
       { compte: '445600', libelle: 'A nouveau TGC deductible', credit: 7_000 },
@@ -229,7 +229,7 @@ test('l etat preparatoire calcule la TGC nette due au Tresor', () => {
 
 test('l etat preparatoire ignore les brouillons', () => {
   creerBrouillon({
-    journal: 'EMO', date_ecriture: LE('01-20'), libelle: 'Brouillon non comptabilise',
+    journal: 'EMO', date_ecriture: LE('01-20'), piece_ref: 'P-5437', libelle: 'Brouillon non comptabilise',
     lignes: [
       { compte: dossier.compte_client, libelle: 'TTC', debit: 111_000 },
       { compte: '706100', libelle: 'Emoluments', credit: 100_000 },
@@ -273,7 +273,7 @@ test('la TGC declaree et non encore reglee est signalee', () => {
 
 test('une declaration qui liquide plus de TGC que la comptabilite n en porte est refusee', () => {
   const b = creerBrouillon({
-    journal: 'OD', date_ecriture: LE('02-01'), libelle: 'Declaration gonflee',
+    journal: 'OD', date_ecriture: LE('02-01'), piece_ref: 'P-1744', libelle: 'Declaration gonflee',
     lignes: [
       { compte: '445700', libelle: 'TGC collectee', debit: 50_000 },
       { compte: '445500', libelle: 'TGC a decaisser', credit: 50_000 },
@@ -292,7 +292,7 @@ test('une declaration dont l arithmetique ne boucle pas est refusee', () => {
     ],
   });
   const b = creerBrouillon({
-    journal: 'OD', date_ecriture: LE('02-28'), libelle: 'Declaration incoherente',
+    journal: 'OD', date_ecriture: LE('02-28'), piece_ref: 'P-8261', libelle: 'Declaration incoherente',
     lignes: [
       { compte: '445700', libelle: 'TGC collectee', debit: 22_000 },
       { compte: '445500', libelle: 'TGC a decaisser', credit: 19_000 },
@@ -304,7 +304,7 @@ test('une declaration dont l arithmetique ne boucle pas est refusee', () => {
 
 test('un reglement au Tresor superieur a la TGC declaree est refuse', () => {
   const b = creerBrouillon({
-    journal: 'BQO', date_ecriture: LE('02-05'), libelle: 'Reglement TGC excessif',
+    journal: 'BQO', date_ecriture: LE('02-05'), piece_ref: 'P-0363', libelle: 'Reglement TGC excessif',
     lignes: [
       { compte: '445500', libelle: 'TGC a decaisser', debit: 50_000 },
       { compte: '512100', libelle: 'Compte office', credit: 50_000 },

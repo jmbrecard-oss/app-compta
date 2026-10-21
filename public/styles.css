@@ -215,6 +215,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 details.bloc { border: 1px solid var(--bord); border-radius: var(--radius); padding: .6rem .9rem; background: var(--surface); margin-bottom: .6rem; }
 details.bloc summary { cursor: pointer; font-weight: 600; }
 
+.note-saisie { color: var(--texte-doux); font-size: .8rem; margin: .4rem 0 0; }
+
 .vide { color: var(--texte-doux); font-style: italic; padding: 1rem 0; }
 .empreinte { font-family: var(--mono); font-size: .72rem; color: var(--texte-doux); word-break: break-all; }
 
@@ -252,19 +254,12 @@ dl.parametres dd { margin: .1rem 0 0; font-variant-numeric: tabular-nums; }
 tr.ligne-critique > td { background: var(--critique-fond); }
 tr.ligne-critique:hover > td { background: var(--critique-fond); }
 
-/* ------------------------------------------------------------- impression */
-/* Les états sont des pièces d'inspection : ils doivent sortir sur papier
-   lisibles, complets et paginés, sans la navigation de l'application. */
-@media print {
-  :root {
-    --fond: #fff; --surface: #fff; --surface-2: #fff;
-    --texte: #000; --texte-doux: #333; --bord: #999;
-    --accent: #000; --accent-clair: #fff;
 /* --------------------------------------------------------------- impression
-   Les états présentés à une inspection ou joints à une déclaration sont
-   imprimés : en-têtes de tableaux répétés sur chaque page, aucune colonne
-   tronquée par un défilement horizontal, aucune couleur de fond qui ferait
-   disparaître un montant sur une imprimante monochrome. */
+   Les états sont des pièces d'inspection : ils doivent sortir sur papier
+   lisibles, complets et paginés, sans la navigation de l'application.
+   En-têtes de tableaux répétés sur chaque page, aucune colonne tronquée par
+   un défilement horizontal, aucune couleur de fond qui ferait disparaître un
+   montant sur une imprimante monochrome. */
 .impression-seule { display: none; }
 
 @media print {

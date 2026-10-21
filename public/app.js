@@ -226,6 +226,17 @@ const cartePlacements = (p) => `
       en produit de l'office est refusée à la comptabilisation.
     </p>
   </div>`;
+/** Liste d'ecritures non justifiees ; rien ne s'affiche s'il n'y en a pas. */
+const tableauPieces = (titre, ecritures) => (ecritures.length ? `
+  <h3>${echapper(titre)}</h3>
+  <div class="defilant"><table>
+    <thead><tr><th>Journal</th><th>N°</th><th>Date</th><th>Pièce</th><th>Date pièce</th><th>Libellé</th></tr></thead>
+    <tbody>${ecritures.map((e) => `
+      <tr><td>${echapper(e.journal)}</td><td>${e.numero}</td><td>${dateFr(e.date_ecriture)}</td>
+        <td>${echapper(e.piece_ref).trim() || '<span class="pastille critique">absente</span>'}</td>
+        <td>${dateFr(e.date_piece)}</td><td>${echapper(e.libelle)}</td></tr>`).join('')}
+    </tbody>
+  </table></div>` : '');
 
 const carteAnomalie = (a) => `
   <div class="alerte ${a.gravite.toLowerCase()}">
@@ -281,10 +292,6 @@ const MODELES = [
     journal: 'BQC',
     lignes: [
       { compte: '448600', sens: 'debit', dossier: true },
-    nom: 'Placement des fonds du dossier en compte rubriqué',
-    journal: 'BQC',
-    lignes: [
-      { compte: '512600', sens: 'debit', dossier: true },
       { compte: '512500', sens: 'credit' },
     ],
   },
@@ -294,6 +301,10 @@ const MODELES = [
     lignes: [
       { compte: '448700', sens: 'debit', dossier: true },
       { compte: '512500', sens: 'credit' },
+    ],
+  },
+  { nom: 'Écriture libre', journal: 'OD', lignes: [{ compte: '' }, { compte: '' }] },
+  {
     nom: 'Espèces reçues d\'un client',
     journal: 'CAI',
     lignes: [
@@ -317,6 +328,15 @@ const MODELES = [
       { compte: '531000', sens: 'credit' },
     ],
   },
+  {
+    nom: 'Placement des fonds du dossier en compte rubriqué',
+    journal: 'BQC',
+    lignes: [
+      { compte: '512600', sens: 'debit', dossier: true },
+      { compte: '512500', sens: 'credit' },
+    ],
+  },
+  {
     nom: 'Dénouement d\'un placement rubriqué',
     journal: 'BQC',
     lignes: [
@@ -332,7 +352,6 @@ const MODELES = [
       { compte: '', sens: 'credit', client: true },
     ],
   },
-  { nom: 'Écriture libre', journal: 'OD', lignes: [{ compte: '' }, { compte: '' }] },
 ];
 
 async function vueSaisie() {
@@ -353,7 +372,8 @@ async function vueSaisie() {
             </select>
           </label>
           <label>Date <input type="date" name="date_ecriture" value="${aujourdhui()}" required></label>
-          <label>Pièce <input name="piece_ref" placeholder="n° de pièce"></label>
+          <label>Pièce * <input name="piece_ref" placeholder="n° de facture, de relevé…"></label>
+          <label>Date pièce <input type="date" name="date_piece" value="${aujourdhui()}"></label>
           <label style="flex:1">Libellé <input name="libelle" required placeholder="Objet de l'écriture"></label>
         </div>
 
@@ -374,6 +394,8 @@ async function vueSaisie() {
           <button type="submit" class="secondaire">Enregistrer en brouillon</button>
           <button type="button" id="enregistrer-valider">Comptabiliser</button>
         </div>
+        <p class="note-saisie">* La référence de la pièce justificative est exigée pour comptabiliser :
+          une écriture sans pièce n'est pas vérifiable. Un brouillon peut être enregistré sans elle.</p>
       </form>
     </div>
 
@@ -422,19 +444,14 @@ function ajouterLigne(modele = {}) {
     <td><button type="button" class="lien l-suppr">✕</button></td>`;
   $('#lignes').append(tr);
 
-  // Le choix d'un dossier impute son compte client, sauf si la ligne porte
-  // deja un autre compte : on se contente alors de la rattacher au dossier.
+  // Le choix d'un dossier impute son compte client tant que la ligne n'est pas
+  // deja imputee a autre chose. Sur un placement rubrique ou un debours, le
+  // compte reste celui du modele : le dossier n'y sert qu'a designer le
+  // proprietaire des fonds, et il est transmis avec la ligne.
   $('.l-dossier', tr).addEventListener('change', (e) => {
     const compte = $('.l-compte', tr);
     const choisi = e.target.selectedOptions[0]?.dataset.compte;
     if (choisi && (!compte.value || estCompteClient(compte.value))) compte.value = choisi;
-  // Le choix d'un dossier impute son compte client tant qu'aucun compte n'est
-  // saisi. Sur une ligne deja imputee — placement rubrique, debours — il se
-  // borne a designer le dossier, qui est transmis avec la ligne.
-  $('.l-dossier', tr).addEventListener('change', (e) => {
-    const compteClient = e.target.selectedOptions[0]?.dataset.compte;
-    const champ = $('.l-compte', tr);
-    if (compteClient && !champ.value) champ.value = compteClient;
     recalculer();
   });
   // Debit et credit s'excluent sur une meme ligne.
@@ -451,8 +468,7 @@ function appliquerModele(index) {
   for (const l of m.lignes) {
     const tr = ajouterLigne(l);
     if (l.client) $('.l-compte', tr).title = 'Sélectionner le dossier';
-    if (l.dossier) $('.l-dossier', tr).title = 'Dossier au titre duquel la somme est due — obligatoire';
-    if (l.dossier) $('.l-dossier', tr).title = 'Compte rubriqué : le dossier propriétaire des fonds est obligatoire';
+    if (l.dossier) $('.l-dossier', tr).title = 'Dossier auquel la ligne se rattache — obligatoire';
   }
   recalculer();
 }
@@ -460,7 +476,6 @@ function appliquerModele(index) {
 function lireLignes() {
   return $$('#lignes tr').map((tr) => ({
     compte: $('.l-compte', tr).value,
-    dossier_id: Number($('.l-dossier', tr).value) || null,
     dossier_id: $('.l-dossier', tr).value ? Number($('.l-dossier', tr).value) : null,
     libelle: $('.l-libelle', tr).value,
     debit: Number($('.l-debit', tr).value || 0),
@@ -485,18 +500,19 @@ async function soumettre(valider) {
   const donnees = Object.fromEntries(new FormData(form));
   const lignes = lireLignes();
   if (lignes.length < 2) throw new Error('Une écriture comporte au moins deux lignes imputées.');
+  if (valider && !String(donnees.piece_ref ?? '').trim()) {
+    throw new Error('La référence de la pièce justificative est obligatoire pour comptabiliser.');
+  }
+  if (valider && donnees.date_piece > donnees.date_ecriture) {
+    throw new Error("La pièce ne peut pas être datée après l'écriture qu'elle justifie.");
+  }
   for (const l of lignes) if (!l.libelle) l.libelle = donnees.libelle;
 
   const ecriture = await api('/ecritures', { methode: 'POST', corps: { ...donnees, lignes } });
   if (valider) {
     try {
-      const posee = await api(`/ecritures/${ecriture.id}/valider`, { methode: 'POST', corps: {} });
-      // Une alerte n'empêche pas la comptabilisation : elle la commente.
-      if (posee.alertes?.length) {
-        message(`Écriture comptabilisée (${ecriture.journal}). ⚠ ${posee.alertes.map((a) => a.message).join(' ')}`, true);
-      } else {
-        message(`Écriture comptabilisée (${ecriture.journal}).`);
-      }
+      await api(`/ecritures/${ecriture.id}/valider`, { methode: 'POST', corps: {} });
+      message(`Écriture comptabilisée (${ecriture.journal}).`);
     } catch (e) {
       // L'ecriture reste en brouillon : le refus est explique a l'utilisateur.
       message(`Comptabilisation refusée — ${e.message} L'écriture est conservée en brouillon.`, true);
@@ -1469,7 +1485,6 @@ async function vueInspection() {
         </table></div>` : '<p class="vide">Aucune somme restant à reverser.</p>'}
     </div>
 
-    <div class="carte" style="margin-top:1rem">
     <div class="carte saut-de-page" style="margin-top:1rem">
       <h2>Mouvements d'espèces</h2>
       <p>Les espèces ne laissent aucune trace bancaire. Registre détaillé sur l'écran Caisse.</p>
@@ -1497,7 +1512,6 @@ async function vueInspection() {
          ${esp.totaux.au_dela_du_plafond} au-delà du plafond unitaire.</p>
     </div>
 
-    <div class="carte saut-de-page" style="margin-top:1rem">
       <h2>Continuité des rapprochements bancaires</h2>
       <p>Un rapprochement isolé ne prouve rien : seule une série continue établit que les fonds
         détenus ont été confrontés aux avoirs réels, période après période.</p>
@@ -1543,6 +1557,23 @@ async function vueInspection() {
       <div class="barre-outils">
         <a href="/api/export/archive.json" download><button type="button">Exporter l'archive scellée</button></a>
       </div>
+      <h2>Justification des écritures par les pièces</h2>
+      <div class="alerte ${d.justification_pieces.conforme ? 'information' : 'majeure'}">
+        <strong>Pièces justificatives</strong>
+        ${d.justification_pieces.justifiees} écriture(s) justifiée(s) sur
+        ${d.justification_pieces.ecritures_comptabilisees} comptabilisée(s).
+      </div>
+      ${tableauPieces('Écritures sans référence de pièce', d.justification_pieces.sans_piece)}
+      ${tableauPieces('Pièces datées après l\'écriture', d.justification_pieces.piece_posterieure)}
+      ${d.justification_pieces.doublons.length ? `
+        <h3>Références comptabilisées plusieurs fois</h3>
+        <table>
+          <thead><tr><th>Journal</th><th>Référence</th><th class="nb">Occurrences</th><th>Écritures</th></tr></thead>
+          <tbody>${d.justification_pieces.doublons.map((x) => `
+            <tr><td>${echapper(x.journal)}</td><td>${echapper(x.reference)}</td>
+              <td class="nb">${x.occurrences}</td><td>${echapper(x.numeros)}</td></tr>`).join('')}
+          </tbody>
+        </table>` : ''}
     </div>
 
     <div class="carte" style="margin-top:1rem">

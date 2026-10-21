@@ -103,15 +103,15 @@ function ecritures(cc) {
     { journal: 'BQC', date: LE('01-28'), libelle: 'Taxe hypothecaire - vente Nouville', piece: 'DEB-0102',
       dossier: 0, lignes: [{ compte: cc(0), debit: 184_000 }, { compte: '448700', credit: 184_000 }] },
     { journal: 'EMO', date: LE('02-03'), libelle: 'Emoluments d acte - vente Nouville', piece: 'TAX-0041',
-      dossier: 0, lignes: [{ compte: cc(0), debit: 561_000 }, { compte: '706100', credit: 506_000 }, { compte: '445700', credit: 55_000 }] },
+      dossier: 0, lignes: [{ compte: cc(0), debit: 530_000 }, { compte: '706100', credit: 500_000 }, { compte: '445700', credit: 30_000 }] },
     { journal: 'BQC', date: LE('02-06'), libelle: 'Virement des emoluments vers le compte office', piece: 'VIR-I-0012',
-      dossier: 0, lignes: [{ compte: '473000', debit: 561_000 }, { compte: '512500', credit: 561_000 }] },
+      dossier: 0, lignes: [{ compte: '473000', debit: 530_000 }, { compte: '512500', credit: 530_000 }] },
     { journal: 'BQO', date: LE('02-06'), libelle: 'Encaissement des emoluments - vente Nouville', piece: 'VIR-I-0012',
-      dossier: 0, lignes: [{ compte: '512100', debit: 561_000 }, { compte: '473000', credit: 561_000 }] },
+      dossier: 0, lignes: [{ compte: '512100', debit: 530_000 }, { compte: '473000', credit: 530_000 }] },
     { journal: 'BQC', date: LE('02-20'), libelle: 'Reversement des droits au Tresor - dossier 00041', piece: 'VIR-T-0007',
       dossier: 0, lignes: [{ compte: '448600', debit: 1_320_000 }, { compte: '448700', debit: 184_000 }, { compte: '512500', credit: 1_504_000 }] },
     { journal: 'BQC', date: LE('02-24'), libelle: 'Restitution du solde au client - vente Nouville', piece: 'VIR-C-0188',
-      dossier: 0, lignes: [{ compte: cc(0), debit: 335_000 }, { compte: '512500', credit: 335_000 }] },
+      dossier: 0, lignes: [{ compte: cc(0), debit: 366_000 }, { compte: '512500', credit: 366_000 }] },
 
     // --------------------- dossier 2 : succession en cours, fonds detenus --
     { journal: 'BQC', date: LE('01-22'), libelle: 'Fonds de succession recus de la BCI', piece: 'VIR-C-0112',
@@ -121,7 +121,7 @@ function ecritures(cc) {
     { journal: 'BQC', date: LE('02-18'), libelle: 'Acompte versement heritier BERNARD P.', piece: 'VIR-C-0164',
       dossier: 1, lignes: [{ compte: cc(1), debit: 2_000_000 }, { compte: '512500', credit: 2_000_000 }] },
     { journal: 'EMO', date: LE('03-02'), libelle: 'Emoluments de formalites - succession', piece: 'TAX-0057',
-      dossier: 1, lignes: [{ compte: cc(1), debit: 266_400 }, { compte: '706200', credit: 240_000 }, { compte: '445700', credit: 26_400 }] },
+      dossier: 1, lignes: [{ compte: cc(1), debit: 254_400 }, { compte: '706200', credit: 240_000 }, { compte: '445700', credit: 14_400 }] },
 
     // ---------------------- dossier 3 : acquisition, provision importante --
     { journal: 'BQC', date: LE('02-11'), libelle: 'Provision SCI LES BANIANS', piece: 'VIR-C-0141',
@@ -129,7 +129,7 @@ function ecritures(cc) {
     { journal: 'BQC', date: LE('02-27'), libelle: 'Droits d enregistrement - terrain Dumbea', piece: 'DEB-0133',
       dossier: 2, lignes: [{ compte: cc(2), debit: 4_400_000 }, { compte: '448600', credit: 4_400_000 }] },
     { journal: 'EMO', date: LE('03-05'), libelle: 'Emoluments d acte - terrain Dumbea', piece: 'TAX-0063',
-      dossier: 2, lignes: [{ compte: cc(2), debit: 998_400 }, { compte: '706100', credit: 900_000 }, { compte: '445700', credit: 98_400 }] },
+      dossier: 2, lignes: [{ compte: cc(2), debit: 954_000 }, { compte: '706100', credit: 900_000 }, { compte: '445700', credit: 54_000 }] },
 
     // -------------------------- dossier 4 : donation-partage, petit solde --
     { journal: 'BQC', date: LE('02-19'), libelle: 'Provision donation-partage KASOVIMOIN', piece: 'VIR-C-0159',
@@ -224,28 +224,29 @@ function construire() {
   );
   brouillons++;
 
-  // Un rapprochement bancaire clos sur le compte office, pour que l'ecran ne
-  // soit pas vide et que la pre-cloture ait de quoi se prononcer. Le releve
-  // est cale sur la comptabilite a la date d'arrete : tout se pointe, l'ecart
-  // est nul, le rapprochement se clot.
-  const arrete = LE('02-28');
-  const soldeAuArrete = un(
-    `SELECT IFNULL(SUM(l.debit - l.credit), 0) AS s
-     FROM lignes l JOIN ecritures e ON e.id = l.ecriture_id
-     WHERE l.compte = '512100' AND e.statut <> 'BROUILLON' AND e.date_ecriture <= $d`,
-    { d: arrete },
-  ).s;
+  // Rapprochements bancaires mensuels du compte office. Ils sont clos dans
+  // l'ordre : un arrete ne se justifie pas tant que le precedent ne l'est
+  // pas. Le releve est cale sur la comptabilite a la date d'arrete, de sorte
+  // que tout se pointe et que l'ecart soit nul.
+  for (const arrete of [LE('01-31'), LE('02-28')]) {
+    const solde = un(
+      `SELECT IFNULL(SUM(l.debit - l.credit), 0) AS s
+       FROM lignes l JOIN ecritures e ON e.id = l.ecriture_id
+       WHERE l.compte = '512100' AND e.statut <> 'BROUILLON' AND e.date_ecriture <= $d`,
+      { d: arrete },
+    ).s;
 
-  const rappro = ouvrirRapprochement(
-    { compte: '512100', date_arrete: arrete, solde_releve: soldeAuArrete },
-    utilisateur,
-  );
-  pointer(rappro.id, rappro.en_suspens.map((m) => m.id), true, utilisateur);
-  cloreRapprochement(rappro.id, utilisateur);
+    const rappro = ouvrirRapprochement(
+      { compte: '512100', date_arrete: arrete, solde_releve: solde },
+      utilisateur,
+    );
+    pointer(rappro.id, rappro.en_suspens.map((m) => m.id), true, utilisateur);
+    cloreRapprochement(rappro.id, utilisateur);
+  }
 
   const mdpFinal = init.compte_initial?.motDePasse ?? '(compte deja existant, mot de passe inchange)';
 
-  // Les accès sont ecrits sur disque : la commande qui installe la demo et
+  // Les acces sont ecrits sur disque : la commande qui installe la demo et
   // celle qui la lance sont distinctes, et le mot de passe ne doit pas se
   // perdre entre les deux.
   const fichierAcces = new URL('../data/demo-acces.txt', import.meta.url).pathname;

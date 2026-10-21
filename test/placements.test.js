@@ -58,7 +58,7 @@ test('reception des fonds du client sur le compte de depot', () => {
 
 test('un mouvement sur un compte rubrique sans dossier designe est refuse', () => {
   const b = creerBrouillon({
-    journal: 'BQC', date_ecriture: LE('04-02'), libelle: 'Placement sans affectation',
+    journal: 'BQC', date_ecriture: LE('04-02'), piece_ref: 'P-2150', libelle: 'Placement sans affectation',
     lignes: [
       { compte: '512600', libelle: 'Placement', debit: 3_000_000 },
       { compte: '512500', libelle: 'Transfert', credit: 3_000_000 },
@@ -85,7 +85,7 @@ test('le placement rubrique au nom du dossier est accepte dans la limite de ses 
 
 test('placer plus que les fonds detenus pour le dossier est refuse', () => {
   const b = creerBrouillon({
-    journal: 'BQC', date_ecriture: LE('04-04'), libelle: 'Placement excedant la provision',
+    journal: 'BQC', date_ecriture: LE('04-04'), piece_ref: 'P-9584', libelle: 'Placement excedant la provision',
     lignes: [
       { compte: '512600', dossier_id: d1.id, libelle: 'Placement BERGER', debit: 8_000_000 },
       { compte: '512500', libelle: 'Transfert vers placement', credit: 8_000_000 },
@@ -97,7 +97,7 @@ test('placer plus que les fonds detenus pour le dossier est refuse', () => {
 
 test('retirer plus que le placement du dossier est refuse', () => {
   const b = creerBrouillon({
-    journal: 'BQC', date_ecriture: LE('04-05'), libelle: 'Retrait superieur au placement',
+    journal: 'BQC', date_ecriture: LE('04-05'), piece_ref: 'P-3216', libelle: 'Retrait superieur au placement',
     lignes: [
       { compte: '512500', libelle: 'Retour de placement', debit: 5_000_000 },
       { compte: '512600', dossier_id: d1.id, libelle: 'Denouement BERGER', credit: 5_000_000 },
@@ -108,7 +108,7 @@ test('retirer plus que le placement du dossier est refuse', () => {
 
 test('le placement d un dossier ne peut pas alimenter le compte client d un autre', () => {
   const b = creerBrouillon({
-    journal: 'BQC', date_ecriture: LE('04-06'), libelle: 'Transfert entre dossiers',
+    journal: 'BQC', date_ecriture: LE('04-06'), piece_ref: 'P-3035', libelle: 'Transfert entre dossiers',
     lignes: [
       { compte: '512600', dossier_id: d1.id, libelle: 'Produits du placement', debit: 1_000_000 },
       { compte: d2.compte_client, libelle: 'Au profit de TAVERA', credit: 1_000_000 },
@@ -134,7 +134,7 @@ test('les produits financiers du placement sont affectes au dossier qui les a pr
 
 test('l appropriation des produits du placement par l office est refusee', () => {
   const b = creerBrouillon({
-    journal: 'BQC', date_ecriture: LE('04-08'), libelle: 'Interets conserves par l office',
+    journal: 'BQC', date_ecriture: LE('04-08'), piece_ref: 'P-8893', libelle: 'Interets conserves par l office',
     lignes: [
       { compte: '512600', dossier_id: d1.id, libelle: 'Interets crediteurs', debit: 20_000 },
       { compte: '768000', libelle: 'Produits financiers', credit: 20_000 },
@@ -154,7 +154,7 @@ test('les rubriques des dossiers ventilent exactement le solde du compte de plac
 
 test('restituer la totalite des fonds en laissant un placement ouvert est refuse', () => {
   const b = creerBrouillon({
-    journal: 'BQC', date_ecriture: LE('04-09'), libelle: 'Restitution du solde BERGER',
+    journal: 'BQC', date_ecriture: LE('04-09'), piece_ref: 'P-5276', libelle: 'Restitution du solde BERGER',
     lignes: [
       { compte: d1.compte_client, libelle: 'Restitution', debit: 10_050_000 },
       { compte: '512500', libelle: 'Virement au client', credit: 10_050_000 },

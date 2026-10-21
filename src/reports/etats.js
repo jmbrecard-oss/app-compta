@@ -1,5 +1,5 @@
 import { un, tous } from '../db.js';
-import { etatRepresentationFonds, etatComptesDebiteurs, etatDeboursAReverser, anomalies } from '../domain/controles.js';
+import { etatRepresentationFonds, etatComptesDebiteurs, etatDeboursAReverser, anomalies, etatJustificationPieces } from '../domain/controles.js';
 import { baremeCourant, baremeFictif, listerTaxes, lireTaxe, taxeEnVigueur, taxeAnnulee } from '../domain/tarif.js';
 import { registreDesEspeces } from '../domain/especes.js';
 import { etatTgc, periodesTgc } from '../domain/tgc.js';
@@ -270,6 +270,7 @@ export function dossierInspection(p = {}) {
     taxes: etatTaxes(),
     debours_a_reverser: etatDeboursAReverser(),
     placements: etatPlacements(),
+    justification_pieces: etatJustificationPieces(),
     anomalies: anomalies(),
     registre_especes: registreDesEspeces(p),
     comptes_attente: tous(`SELECT * FROM v_soldes WHERE nature = 'ATTENTE'`),

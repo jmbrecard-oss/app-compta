@@ -16,6 +16,7 @@ export function ouvrirBase(chemin = process.env.COMPTA_DB ?? join(RACINE, 'data'
   db.exec('PRAGMA foreign_keys = ON');
   migrer(db);
   db.exec(readFileSync(join(ici, 'schema.sql'), 'utf8'));
+  migrer(db);
   return db;
 }
 
@@ -25,16 +26,32 @@ export function ouvrirBase(chemin = process.env.COMPTA_DB ?? join(RACINE, 'data'
  * schema.sql est rejoue a chaque ouverture, mais CREATE TABLE IF NOT EXISTS
  * n'ajoute aucune colonne a une table existante. Les ajouts de colonne sont
  * donc declares ici, et appliques AVANT schema.sql pour que les vues qui s'y
- * appuient puissent etre creees.
+ * appuient puissent etre creees. Les declencheurs, eux, sont supprimes puis
+ * recrees par le schema : ils sont toujours a jour.
  */
 const MIGRATIONS = [
-  { table: 'comptes', colonne: 'rubrique', sql: 'ALTER TABLE comptes ADD COLUMN rubrique INTEGER NOT NULL DEFAULT 0' },
+  {
+    table: 'comptes',
+    colonne: 'rubrique',
+    sql: 'ALTER TABLE comptes ADD COLUMN rubrique INTEGER NOT NULL DEFAULT 0',
+  },
+  {
+    table: 'journaux',
+    colonne: 'piece_unique',
+    sql: 'ALTER TABLE journaux ADD COLUMN piece_unique INTEGER NOT NULL DEFAULT 0',
+    // Un numero de facture identifie une piece unique ; une reference de
+    // releve ou de feuille de caisse en justifie plusieurs.
+    apres: `UPDATE journaux SET piece_unique = 1 WHERE type IN ('ACHATS','VENTES')`,
+  },
 ];
 
 function migrer(db) {
   for (const m of MIGRATIONS) {
     const colonnes = db.prepare(`PRAGMA table_info(${m.table})`).all().map((c) => c.name);
-    if (colonnes.length && !colonnes.includes(m.colonne)) db.exec(m.sql);
+    if (colonnes.length && !colonnes.includes(m.colonne)) {
+      db.exec(m.sql);
+      if (m.apres) db.exec(m.apres);
+    }
   }
 }
 

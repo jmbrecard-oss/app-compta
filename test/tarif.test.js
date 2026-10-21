@@ -399,7 +399,7 @@ test('la taxe d un dossier sans provision passe, mais rend le dossier debiteur e
 
 test('un emolument comptabilise hors dossier est refuse', () => {
   const b = creerBrouillon({
-    journal: 'EMO', date_ecriture: LE('03-04'), libelle: 'Emolument encaisse hors dossier',
+    journal: 'EMO', date_ecriture: LE('03-04'), piece_ref: 'P-9974', libelle: 'Emolument encaisse hors dossier',
     lignes: [
       { compte: '512100', libelle: 'Compte office', debit: 100_000 },
       { compte: '706100', libelle: 'Emoluments', credit: 100_000 },
@@ -410,7 +410,7 @@ test('un emolument comptabilise hors dossier est refuse', () => {
 
 test('un debours a reverser au Tresor comptabilise hors dossier est refuse', () => {
   const b = creerBrouillon({
-    journal: 'OD', date_ecriture: LE('03-05'), libelle: 'Droits d enregistrement sans dossier',
+    journal: 'OD', date_ecriture: LE('03-05'), piece_ref: 'P-9016', libelle: 'Droits d enregistrement sans dossier',
     lignes: [
       { compte: '471000', libelle: 'Attente', debit: 200_000 },
       { compte: '448600', libelle: 'Droits a reverser', credit: 200_000 },
@@ -421,7 +421,7 @@ test('un debours a reverser au Tresor comptabilise hors dossier est refuse', () 
 
 test('un emolument herite du dossier quand l ecriture n en concerne qu un', () => {
   const id = comptabiliser({
-    journal: 'EMO', date_ecriture: LE('03-04'), libelle: 'Emolument complementaire MARTIN',
+    journal: 'EMO', date_ecriture: LE('03-04'), piece_ref: 'P-8118', libelle: 'Emolument complementaire MARTIN',
     lignes: [
       { compte: provisionne.compte_client, libelle: 'Emolument', debit: 22_200 },
       { compte: '706400', libelle: 'Honoraire libre', credit: 20_000 },
@@ -438,7 +438,7 @@ test('un emolument ne peut pas s abriter derriere le dossier d une autre ligne',
   // Deux dossiers dans la meme ecriture : le rattachement du produit devient
   // ambigu, et une ligne de compte client ne vaut pas rattachement de l acte.
   const b = creerBrouillon({
-    journal: 'EMO', date_ecriture: LE('03-05'), libelle: 'Emolument entre deux dossiers',
+    journal: 'EMO', date_ecriture: LE('03-05'), piece_ref: 'P-1179', libelle: 'Emolument entre deux dossiers',
     lignes: [
       { compte: provisionne.compte_client, libelle: 'Imputation', debit: 100_000 },
       { compte: atelier.compte_client, libelle: 'Contrepartie', credit: 60_000 },
@@ -450,7 +450,7 @@ test('un emolument ne peut pas s abriter derriere le dossier d une autre ligne',
 
 test('le reversement des droits au Tresor reste possible, rattache au dossier', () => {
   const id = comptabiliser({
-    journal: 'BQC', date_ecriture: LE('03-06'), libelle: 'Reversement des droits MARTIN',
+    journal: 'BQC', date_ecriture: LE('03-06'), piece_ref: 'P-7323', libelle: 'Reversement des droits MARTIN',
     lignes: [
       { compte: '448600', dossier_id: provisionne.id, libelle: 'Droits reverses', debit: 1_000_000 },
       { compte: '512500', libelle: 'Depuis le compte de depot', credit: 1_000_000 },
@@ -484,7 +484,7 @@ test('une ecriture anterieure au controle reste contre-passable', () => {
 
   // Mais la meme ecriture ne peut toujours pas etre saisie a neuf.
   const b = creerBrouillon({
-    journal: 'OD', date_ecriture: LE('06-02'), libelle: 'Honoraire sans dossier',
+    journal: 'OD', date_ecriture: LE('06-02'), piece_ref: 'P-2296', libelle: 'Honoraire sans dossier',
     lignes: [
       { compte: '512100', libelle: 'Encaissement', debit: 80_000 },
       { compte: '706400', libelle: 'Honoraire', credit: 80_000 },
@@ -517,7 +517,7 @@ test('une taxe contre-passee sort du compte definitif et des produits', () => {
   // Dossier dedie : on taxe, on comptabilise, puis on extourne l ecriture.
   const d = ouvrirDossier({ reference: 'T-004', intitule: 'ACTE ANNULE' }, notaire);
   comptabiliser({
-    journal: 'BQC', date_ecriture: LE('06-03'), libelle: 'Provision acte annule',
+    journal: 'BQC', date_ecriture: LE('06-03'), piece_ref: 'P-7398', libelle: 'Provision acte annule',
     lignes: [
       { compte: '512500', libelle: 'Virement', debit: 2_000_000 },
       { compte: d.compte_client, libelle: 'Provision', credit: 2_000_000 },

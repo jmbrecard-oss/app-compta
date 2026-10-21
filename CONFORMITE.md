@@ -161,6 +161,27 @@ Cycle d'une taxe : **projet** (modifiable, sans effet comptable) → **arrêtée
 confrontée au barème, verrouillée en base) → **comptabilisée** (une écriture lui est attachée
 et passe sans exception tous les contrôles de comptabilisation). Une taxe comptabilisée ne se
 corrige que par contre-passation de l'écriture et nouvelle taxe.
+### 4. Justification des écritures par les pièces
+
+Une comptabilité n'est contrôlable que si l'on peut remonter de chaque écriture à la pièce qui
+la justifie. L'article 2 de l'arrêté de 2006 fait porter l'examen du commissaire aux comptes sur
+**tous les modules générant des écritures comptables** : une écriture sans pièce échappe par
+construction à cet examen.
+
+| Règle | Mise en œuvre | Preuve |
+|---|---|---|
+| Toute écriture comptabilisée porte la référence de sa pièce justificative | `controlePieceJustificative` refuse la comptabilisation si `piece_ref` est vide ou réduite à des espaces. Le brouillon, lui, reste admis sans pièce : la saisie peut être incomplète, la comptabilisation non | test « une écriture sans référence de pièce ne peut pas être comptabilisée » |
+| La pièce est datée, et jamais postérieure à l'écriture | Date au format `AAAA-MM-JJ` exigée ; `date_piece > date_ecriture` refusé — une écriture ne peut pas être justifiée par une pièce qui n'existe pas encore à sa date | tests « une pièce datée postérieurement à l'écriture est refusée » et « une date de pièce hors format est refusée » |
+| Pas de double comptabilisation d'une même pièce | Dans les journaux où une référence désigne une pièce et une seule (`journaux.piece_unique` : achats et émoluments), la ressaisie de la même référence dans le même exercice est refusée. La comparaison ignore la casse et les espaces surnuméraires | test « la même facture ne peut pas être comptabilisée deux fois dans un journal de facturation » |
+| Une référence de relevé justifie plusieurs écritures | `piece_unique = 0` pour les journaux de banque, de caisse, d'opérations diverses et d'à-nouveaux : un relevé couvre légitimement de nombreuses lignes | test « une même référence de relevé justifie plusieurs écritures de banque » |
+| La contre-passation reprend la pièce d'origine | Le lien `contrepassation_de` est posé dès le brouillon miroir : l'extourne est exemptée du contrôle de doublon, et la pièce extournée peut ensuite être réimputée sous sa référence d'origine | test « la contre-passation reprend la pièce d'origine sans être tenue pour un doublon » |
+| Les écritures héritées non justifiées sont recensées, pas dissimulées | `etatJustificationPieces` : écritures comptabilisées sans pièce, pièces postérieures, références comptabilisées plusieurs fois, brouillons sans pièce. Remonté dans les anomalies (gravité **majeure**) et dans le dossier d'inspection | test « l'état de justification des pièces recense les écritures non justifiées » |
+
+Le contrôle bloquant ne vaut que pour l'avenir : une écriture comptabilisée est inaltérable, une
+écriture héritée sans pièce ne peut donc plus être corrigée autrement que par contre-passation.
+C'est pourquoi l'absence de pièce sur l'existant est **signalée** et non érigée en obstacle de
+clôture : un obstacle que l'office ne pourrait pas lever n'aurait pour seul effet que de
+généraliser la clôture forcée.
 
 ### 5. Tenue de la comptabilité
 
@@ -221,6 +242,7 @@ surveille donc la *continuité* des rapprochements, compte par compte.
 | Relance automatique des périodes non effectuées | `relancesRapprochements` alimente le tableau de bord, l'écran Rapprochement et le dossier d'inspection. Gravité majorée sur les comptes de dépôt des fonds clients : ce sont les fonds d'autrui qui cessent d'être contrôlés | tests « la gravité des relances distingue les fonds clients des comptes de l'office » et « les anomalies signalent les rapprochements périodiques non effectués » |
 | **Toutes les périodes de l'exercice rapprochées avant la clôture** | `controlePreCloture` énumère chaque période non couverte, compte par compte. Un unique rapprochement au 31 décembre ne suffit plus | test « la pré-clôture refuse un exercice dont les périodes intermédiaires ne sont pas rapprochées » |
 | Périodicité et délai paramétrables | `PERIODICITE_MOIS` et `DELAI_PRODUCTION_JOURS` dans [`src/domain/surveillance.js`](src/domain/surveillance.js) — valeurs par défaut (mensuelle, 15 jours) **à confirmer par la Chambre** | test « la périodicité du rapprochement est paramétrable » |
+### 6. Contrôles périodiques
 
 - **Clôture d'exercice** : `controlePreCloture` énumère les obstacles — brouillons, comptes
   d'attente non soldés, dossiers débiteurs, fonds non représentés, chaîne altérée,
@@ -312,6 +334,8 @@ figure parmi les points à arbitrer ci-dessous.
   anomalies, rapprochements, volumétrie, état de la chaîne, piste d'audit — sur un écran unique.
 - **Archive scellée** : la chaîne complète des écritures comptabilisées, sous un scellé unique,
   accompagnée de sa procédure de vérification indépendante — voir § 7.
+  justification des écritures par les pièces, anomalies, rapprochements, volumétrie, état de la
+  chaîne, piste d'audit — sur un écran unique.
 - Exports CSV de la balance et de l'état des comptes clients.
 
 ### 7. Archive scellée et vérification indépendante
@@ -432,6 +456,21 @@ le rapport remis, et non laissée à l'interprétation.
    et auprès de qui déposer la racine pour qu'elle soit opposable ? Le logiciel produit l'archive et
    la racine ; il ne peut pas décider seul de leur dépôt, qui est le seul point rendant la
    falsification détectable.
+6. **Unicité des références de pièce** : elle est exigée dans les journaux d'achats et
+   d'émoluments, pas dans ceux de banque, de caisse ni d'opérations diverses
+   (`journaux.piece_unique`). Cette répartition décrit une façon de référencer les pièces dans
+   l'office, pas une règle de droit : à confirmer, journal par journal.
+
+### Réserves techniques connues
+
+- **`date_piece` n'entre pas dans l'empreinte des écritures.** Le champ est verrouillé au niveau
+  de la base (déclencheur `trg_ecriture_maj_interdite`), au même titre que la date d'écriture ou
+  le libellé, mais il ne figure pas dans le calcul de `empreinteEcriture`. L'y ajouter
+  invaliderait la chaîne de toutes les écritures déjà scellées : l'opération est réservée à une
+  rupture de version assumée, avec rescellement documenté. La référence de pièce, elle, est bien
+  scellée dans la chaîne.
+- Les déclencheurs d'inaltérabilité sont désormais supprimés puis recréés à chaque ouverture de
+  la base : une base existante reçoit ainsi les verrous ajoutés par les versions ultérieures.
 
 ---
 

@@ -5,7 +5,7 @@ import { join, extname, normalize } from 'node:path';
 import { ouvrirBase, un, tous, RACINE } from './db.js';
 import { initialiser } from './init.js';
 import { connecter, deconnecter, utilisateurDuJeton, exigerDroit, listerUtilisateurs, creerUtilisateur } from './auth.js';
-import { ErreurConformite, anomalies, etatRepresentationFonds, etatComptesDebiteurs, etatDeboursAReverser } from './domain/controles.js';
+import { ErreurConformite, anomalies, etatRepresentationFonds, etatComptesDebiteurs, etatDeboursAReverser, etatJustificationPieces } from './domain/controles.js';
 import * as Ecritures from './domain/ecritures.js';
 import * as Dossiers from './domain/dossiers.js';
 import { etatPlacements } from './domain/placements.js';
@@ -285,6 +285,7 @@ route('POST', '/api/tgc/liquidation', 'saisir', async ({ corps, utilisateur }) =
 // --------------------------------------------------------- controles et audit
 
 route('GET', '/api/controles/anomalies', 'lire', async () => anomalies());
+route('GET', '/api/controles/pieces', 'lire', async () => etatJustificationPieces());
 route('GET', '/api/controles/chaine', 'lire', async () => ({
   ecritures: Ecritures.verifierChaineEcritures(),
   audit: verifierChaineAudit(),
@@ -393,6 +394,8 @@ route('GET', '/api/export/registre-especes.csv', 'lire', async ({ query, res }) 
     { titre: 'Signalement', valeur: 'signalement' },
   ]);
   texteBrut(res, 'registre-especes.csv', contenu, 'text/csv; charset=utf-8');
+});
+
 route('GET', '/api/export/tgc.csv', 'lire', async ({ query, res }) => {
   const e = Tgc.etatTgc(query);
   const lignes = [
@@ -408,6 +411,8 @@ route('GET', '/api/export/tgc.csv', 'lire', async ({ query, res }) => {
     { titre: 'Ecritures', valeur: 'ecritures' },
   ]);
   texteBrut(res, 'tgc.csv', contenu, 'text/csv; charset=utf-8');
+});
+
 route('GET', '/api/export/placements.csv', 'lire', async ({ res }) => {
   const e = etatPlacements();
   const contenu = versCSV(e.dossiers, [
@@ -485,7 +490,13 @@ const serveur = createServer(async (req, res) => {
     const corps = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await corpsJSON(req) : {};
 
     const resultat = await r.gestionnaire({ utilisateur, jeton, params, query, corps, res });
-    if (resultat === null && res.headersSent) return;
+
+    // Les routes d'export ecrivent elles-memes leur reponse (fichier joint) et
+    // ne renvoient rien : dans ce cas la reponse est deja complete, quelle que
+    // soit la valeur renvoyee. Repondre une seconde fois ferait tomber le
+    // serveur.
+    if (res.headersSent) return;
+
     if (resultat === null || resultat === undefined) return json(res, 404, { erreur: 'Introuvable', code: 'INTROUVABLE' });
     return json(res, 200, resultat);
   } catch (e) {

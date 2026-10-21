@@ -50,6 +50,12 @@ débours, facturation des émoluments, virement vers le compte office, restituti
 solde. Équilibre affiché en direct. Une écriture naît en brouillon ; elle n'existe
 comptablement qu'une fois comptabilisée.
 
+**Pièces justificatives.** Aucune écriture ne se comptabilise sans la référence de
+la pièce qui la justifie, datée et jamais postérieure à l'écriture. Dans les journaux
+d'achats et d'émoluments, une même référence ne peut pas être comptabilisée deux
+fois : la double imputation d'une facture est refusée. Un relevé bancaire, lui,
+justifie autant d'écritures qu'il comporte de lignes.
+
 **Comptabilisation.** À cet instant, et seulement à cet instant, l'écriture reçoit
 son numéro de séquence, passe les contrôles bloquants et entre dans la chaîne
 d'empreintes. Elle devient alors immuable : la base elle-même refuse toute
@@ -61,6 +67,8 @@ chronologie du journal, étanchéité office/clients, solde client jamais débit
 représentation permanente des fonds clients, rattachement au dossier de tout
 émolument et de tout débours à reverser. Un refus annule toute l'écriture et
 la laisse en brouillon, avec le motif exact.
+représentation permanente des fonds clients, justification par une pièce. Un refus
+annule toute l'écriture et la laisse en brouillon, avec le motif exact.
 
 **Taxe des actes.** Liquidation des émoluments, des débours et des taxes à partir d'un
 barème **paramétrable** : tranches, taux, assiettes, minimums, comptes d'imputation et
@@ -141,6 +149,8 @@ l'archive arrêtée par l'office. La racine — empreinte de la dernière écrit
 toutes les précédentes — doit être conservée **hors** de l'archive : c'est elle, et elle
 seule, qui rend une falsification détectable. Voir
 [CONFORMITE.md](CONFORMITE.md), Partie II § 7.
+la chaîne d'inaltérabilité, justification des écritures par les pièces, anomalies
+classées par gravité, exercices, piste d'audit nominative et horodatée.
 
 **Clôture d'exercice.** Diagnostic préalable listant chaque obstacle, génération des
 à-nouveaux, scellement de l'exercice par une empreinte.
@@ -199,6 +209,7 @@ test/                 51 tests de conformité
 test/                 35 tests de conformité
 test/                 32 tests de conformité
 test/                 34 tests de conformité
+test/                 28 tests de conformité
 ```
 
 ## Exploitation

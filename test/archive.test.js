@@ -55,7 +55,7 @@ comptabiliser({
 });
 
 const aExtourner = comptabiliser({
-  journal: 'OD', date_ecriture: LE('02-06'), libelle: 'Imputation erronee',
+  journal: 'OD', date_ecriture: LE('02-06'), piece_ref: 'P-3303', libelle: 'Imputation erronee',
   lignes: [
     { compte: '606400', libelle: 'Fournitures', debit: 30_000 },
     { compte: '401000', libelle: 'Fournisseur', credit: 30_000 },
@@ -65,7 +65,7 @@ contrepasser(aExtourner, { date_ecriture: LE('02-07'), motif: 'Compte de charge 
 
 // Un brouillon jamais comptabilise : il ne doit jamais entrer dans l'archive.
 const brouillon = creerBrouillon({
-  journal: 'OD', date_ecriture: LE('02-08'), libelle: 'Brouillon abandonne',
+  journal: 'OD', date_ecriture: LE('02-08'), piece_ref: 'P-3094', libelle: 'Brouillon abandonne',
   lignes: [
     { compte: '606400', libelle: 'x', debit: 9_999 },
     { compte: '401000', libelle: 'x', credit: 9_999 },

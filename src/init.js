@@ -47,8 +47,8 @@ export function initialiser({
     for (const j of JOURNAUX) {
       if (un('SELECT code FROM journaux WHERE code = $c', { c: j.code })) continue;
       exec(
-        `INSERT INTO journaux (code, libelle, type, compte_contrepartie)
-         VALUES ($code, $libelle, $type, $compte_contrepartie)`,
+        `INSERT INTO journaux (code, libelle, type, compte_contrepartie, piece_unique)
+         VALUES ($code, $libelle, $type, $compte_contrepartie, $piece_unique)`,
         j,
       );
     }
