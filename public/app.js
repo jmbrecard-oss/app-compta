@@ -224,6 +224,27 @@ const MODELES = [
     lignes: [
       { compte: '448700', sens: 'debit', dossier: true },
       { compte: '512500', sens: 'credit' },
+    nom: 'Espèces reçues d\'un client',
+    journal: 'CAI',
+    lignes: [
+      { compte: '531500', sens: 'debit' },
+      { compte: '', sens: 'credit', client: true },
+    ],
+  },
+  {
+    nom: 'Versement des espèces clients en banque',
+    journal: 'CAI',
+    lignes: [
+      { compte: '512500', sens: 'debit' },
+      { compte: '531500', sens: 'credit' },
+    ],
+  },
+  {
+    nom: 'Dépense de l\'office réglée en espèces',
+    journal: 'CAI',
+    lignes: [
+      { compte: '606400', sens: 'debit' },
+      { compte: '531000', sens: 'credit' },
     ],
   },
   { nom: 'Écriture libre', journal: 'OD', lignes: [{ compte: '' }, { compte: '' }] },
@@ -972,6 +993,7 @@ async function vueEtats() {
         <a href="/api/export/fec" download><button type="button">Export FEC</button></a>
         <a href="/api/export/balance.csv" download><button type="button" class="secondaire">Balance CSV</button></a>
         <a href="/api/export/comptes-clients.csv" download><button type="button" class="secondaire">Clients CSV</button></a>
+        <button type="button" id="e-imprimer" class="secondaire">Imprimer</button>
       </div>
       <div id="rendu-etat"></div>
     </div>`;
@@ -982,6 +1004,7 @@ async function vueEtats() {
     $('#zone-compte').hidden = e.target.value !== 'grand-livre';
   });
   $('#e-editer').addEventListener('click', garde(editerEtat));
+  $('#e-imprimer').addEventListener('click', () => window.print());
   await editerEtat();
 }
 
@@ -1086,17 +1109,138 @@ async function editerEtat() {
   }
 }
 
+// ===================================================================== caisse
+
+async function vueCaisse() {
+  const p = new URLSearchParams();
+  if (etat.caisseDepuis) p.set('depuis', etat.caisseDepuis);
+  if (etat.caisseJusqu) p.set('jusqu', etat.caisseJusqu);
+  const r = await api(`/etats/registre-especes?${p}`);
+  const par = r.parametres;
+
+  $('#contenu').innerHTML = `
+    <section class="carte" aria-labelledby="titre-caisse">
+      <h2 id="titre-caisse">Registre des espèces</h2>
+      <p>Arrêté le ${dateFr(r.arrete_le)}${r.periode.depuis || r.periode.jusqu
+        ? ` — période du ${dateFr(r.periode.depuis) || 'origine'} au ${dateFr(r.periode.jusqu) || 'ce jour'}` : ''}.
+        Un mouvement d'espèces ne laisse aucune trace bancaire : ce registre et la pièce justificative
+        en sont la seule preuve.</p>
+
+      ${par.statut === 'VALIDE' ? '' : `
+        <div class="alerte" role="alert">
+          <strong>Critique — plafonds non validés</strong>
+          ${echapper(par.avertissement ?? '')}
+        </div>`}
+
+      <div class="barre-outils sans-impression">
+        <label for="c-depuis">Du <input type="date" id="c-depuis" value="${etat.caisseDepuis ?? ''}"></label>
+        <label for="c-jusqu">Au <input type="date" id="c-jusqu" value="${etat.caisseJusqu ?? ''}"></label>
+        <button id="c-editer" class="secondaire">Éditer</button>
+        <span style="flex:1"></span>
+        <a href="/api/export/registre-especes.csv?${p}" download><button type="button" class="secondaire">Registre CSV</button></a>
+        <button type="button" id="c-imprimer" class="secondaire">Imprimer</button>
+      </div>
+
+      <dl class="parametres">
+        <div><dt>Paramétrage</dt><dd>${echapper(par.code)} <span class="pastille ${par.statut === 'VALIDE' ? 'ok' : 'critique'}">${par.statut === 'VALIDE' ? 'validé' : 'non validé'}</span></dd></div>
+        <div><dt>Plafond d'un règlement</dt><dd>${par.plafond_reglement_xpf === null ? 'aucun' : `${xpf(par.plafond_reglement_xpf)} XPF`}</dd></div>
+        <div><dt>Plafond cumulé par dossier</dt><dd>${par.plafond_cumul_dossier_xpf === null ? 'aucun' : `${xpf(par.plafond_cumul_dossier_xpf)} XPF`}</dd></div>
+        <div><dt>Encaisse maximale</dt><dd>${par.encaisse_maximale_xpf === null ? 'aucune' : `${xpf(par.encaisse_maximale_xpf)} XPF`}</dd></div>
+        <div><dt>Source</dt><dd>${echapper(par.source ?? 'aucune — valeurs fictives')}</dd></div>
+        <div><dt>Empreinte du fichier</dt><dd class="empreinte">${echapper(par.empreinte.slice(0, 32))}…</dd></div>
+      </dl>
+    </section>
+
+    ${r.caisses.map((c) => `
+      <section class="carte saut-de-page" style="margin-top:1rem" aria-labelledby="caisse-${echapper(c.compte)}">
+        <header>
+          <h2 id="caisse-${echapper(c.compte)}">${echapper(c.compte)} — ${echapper(c.intitule)}</h2>
+          <span class="pastille ${c.fonds_clients ? 'minuscule' : 'minuscule'}">${c.fonds_clients ? 'fonds clients' : 'office'}</span>
+        </header>
+        <div class="grille">
+          <div><span class="libelle-indicateur">Solde</span>
+            <div class="indicateur ${c.solde_final < 0 ? 'negatif' : ''}">${xpf(c.solde_final)} <small>XPF</small></div></div>
+          <div><span class="libelle-indicateur">Encaissements</span><div class="indicateur">${xpf(c.encaissements)}</div></div>
+          <div><span class="libelle-indicateur">Décaissements</span><div class="indicateur">${xpf(c.decaissements)}</div></div>
+          <div><span class="libelle-indicateur">Minimum atteint</span>
+            <div class="indicateur ${c.jamais_creditrice ? '' : 'negatif'}">${xpf(c.solde_minimum)}</div>
+            <p>${c.jamais_creditrice
+              ? 'La caisse n\'a jamais été créditrice.'
+              : `Créditrice le ${dateFr(c.date_minimum)} — impossible physiquement.`}</p></div>
+        </div>
+        ${c.mouvements.length ? `
+          <div class="defilant"><table>
+            <caption class="sr-seulement">Mouvements d'espèces de la caisse ${echapper(c.compte)}</caption>
+            <thead><tr><th scope="col">Date</th><th scope="col">Pièce</th><th scope="col">Écriture</th>
+              <th scope="col">Libellé</th><th scope="col">Dossier</th>
+              <th scope="col" class="nb">Encaissé</th><th scope="col" class="nb">Décaissé</th>
+              <th scope="col" class="nb">Solde</th><th scope="col">Signalement</th></tr></thead>
+            <tbody>${c.mouvements.map((m) => `
+              <tr${m.solde_negatif ? ' class="ligne-critique"' : ''}>
+                <td>${dateFr(m.date_ecriture)}</td>
+                <td class="compte">${m.sans_piece ? '<span class="pastille critique">absente</span>' : echapper(m.piece_ref)}</td>
+                <td class="compte">${echapper(m.journal)}-${m.numero}</td>
+                <td>${echapper(m.libelle)}</td>
+                <td>${echapper(m.dossier ?? '')}</td>
+                <td class="nb">${m.debit ? xpf(m.debit) : ''}</td>
+                <td class="nb">${m.credit ? xpf(m.credit) : ''}</td>
+                <td class="${montantClasse(m.solde_progressif)}">${xpf(m.solde_progressif)}</td>
+                <td>${[
+                  m.au_dela_du_plafond ? '<span class="pastille critique">au-delà du plafond</span>' : '',
+                  m.solde_negatif ? '<span class="pastille critique">caisse créditrice</span>' : '',
+                  m.statut === 'CONTREPASSEE' ? '<span class="pastille majeure">contre-passée</span>' : '',
+                ].join(' ')}</td>
+              </tr>`).join('')}
+            </tbody>
+            <tfoot><tr><th colspan="5">Solde d'ouverture ${xpf(c.solde_ouverture)} XPF — solde de clôture</th>
+              <th class="nb">${xpf(c.encaissements)}</th><th class="nb">${xpf(c.decaissements)}</th>
+              <th class="nb">${xpf(c.solde_final)}</th><th></th></tr></tfoot>
+          </table></div>`
+        : '<p class="vide">Aucun mouvement d\'espèces sur la période.</p>'}
+      </section>`).join('')}
+
+    <section class="carte saut-de-page" style="margin-top:1rem" aria-labelledby="titre-cumul">
+      <h2 id="titre-cumul">Espèces par dossier</h2>
+      <p>Ventilation des espèces reçues et remises, dossier par dossier. Le plafond cumulé barre
+         le fractionnement d'un versement en plusieurs remises inférieures au plafond unitaire.</p>
+      ${r.cumul_par_dossier.length ? `
+        <table>
+          <thead><tr><th scope="col">Dossier</th><th scope="col">Intitulé</th>
+            <th scope="col" class="nb">Espèces reçues</th><th scope="col" class="nb">Espèces remises</th><th scope="col"></th></tr></thead>
+          <tbody>${r.cumul_par_dossier.map((d) => `
+            <tr${d.au_dela_du_plafond_cumule ? ' class="ligne-critique"' : ''}>
+              <td>${echapper(d.reference)}</td><td>${echapper(d.intitule)}</td>
+              <td class="nb">${xpf(d.encaissements)}</td><td class="nb">${xpf(d.decaissements)}</td>
+              <td>${d.au_dela_du_plafond_cumule ? '<span class="pastille critique">cumul au-delà du plafond</span>' : ''}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>`
+      : '<p class="vide">Aucune espèce reçue ou remise pour un dossier.</p>'}
+    </section>`;
+
+  $('#c-editer').addEventListener('click', garde(async () => {
+    etat.caisseDepuis = $('#c-depuis').value || null;
+    etat.caisseJusqu = $('#c-jusqu').value || null;
+    await vueCaisse();
+  }));
+  $('#c-imprimer').addEventListener('click', () => window.print());
+}
+
 // ================================================================ inspection
 
 async function vueInspection() {
   const d = await api('/etats/inspection');
+  const esp = d.registre_especes;
   const chaine = await api('/controles/chaine');
   const audit = await api('/audit?limite=100');
   const exercices = d.exercices;
 
   $('#contenu').innerHTML = `
     <div class="carte">
-      <h2>Dossier d'inspection</h2>
+      <header>
+        <h2>Dossier d'inspection</h2>
+        <button type="button" id="i-imprimer" class="secondaire sans-impression">Imprimer le dossier</button>
+      </header>
       <p>État des pièces à présenter lors du contrôle de comptabilité, arrêté le ${dateFr(d.edite_le)}.</p>
       <div class="grille">
         <div><span class="libelle-indicateur">Écritures comptabilisées</span><div class="indicateur">${d.volumetrie.ecritures_comptabilisees}</div></div>
@@ -1160,6 +1304,34 @@ async function vueInspection() {
     </div>
 
     <div class="carte" style="margin-top:1rem">
+    <div class="carte saut-de-page" style="margin-top:1rem">
+      <h2>Mouvements d'espèces</h2>
+      <p>Les espèces ne laissent aucune trace bancaire. Registre détaillé sur l'écran Caisse.</p>
+      ${esp.parametres.statut === 'VALIDE' ? '' : `
+        <div class="alerte" role="alert"><strong>Critique — plafonds non validés</strong>
+          Paramétrage ${echapper(esp.parametres.code)} : ${echapper(esp.parametres.avertissement ?? '')}</div>`}
+      <table>
+        <thead><tr><th scope="col">Caisse</th><th scope="col">Intitulé</th>
+          <th scope="col" class="nb">Encaissé</th><th scope="col" class="nb">Décaissé</th>
+          <th scope="col" class="nb">Solde</th><th scope="col" class="nb">Minimum atteint</th>
+          <th scope="col">Jamais créditrice</th></tr></thead>
+        <tbody>${esp.caisses.map((c) => `
+          <tr${c.jamais_creditrice ? '' : ' class="ligne-critique"'}>
+            <td class="compte">${echapper(c.compte)}</td><td>${echapper(c.intitule)}</td>
+            <td class="nb">${xpf(c.encaissements)}</td><td class="nb">${xpf(c.decaissements)}</td>
+            <td class="${montantClasse(c.solde_final)}">${xpf(c.solde_final)}</td>
+            <td class="${montantClasse(c.solde_minimum)}">${xpf(c.solde_minimum)}</td>
+            <td>${c.jamais_creditrice ? '<span class="pastille ok">oui</span>'
+              : `<span class="pastille critique">créditrice le ${dateFr(c.date_minimum)}</span>`}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <p>${esp.totaux.mouvements} mouvement(s) sur la période —
+         ${esp.totaux.sans_piece} sans pièce justificative,
+         ${esp.totaux.au_dela_du_plafond} au-delà du plafond unitaire.</p>
+    </div>
+
+    <div class="carte saut-de-page" style="margin-top:1rem">
       <h2>Anomalies relevées</h2>
       ${d.anomalies.length ? d.anomalies.map(carteAnomalie).join('')
         : '<div class="alerte information"><strong>Conforme</strong>Aucune anomalie.</div>'}
@@ -1195,6 +1367,7 @@ async function vueInspection() {
       </table></div>
     </div>`;
 
+  $('#i-imprimer').addEventListener('click', () => window.print());
   $$('[data-precloture]').forEach((b) => b.addEventListener('click', garde(async () => {
     const r = await api(`/exercices/${b.dataset.precloture}/pre-cloture`);
     $('#zone-precloture').innerHTML = `
@@ -1220,6 +1393,7 @@ const VUES = {
   taxe: vueTaxe,
   rapprochement: vueRapprochement,
   etats: vueEtats,
+  caisse: vueCaisse,
   inspection: vueInspection,
 };
 

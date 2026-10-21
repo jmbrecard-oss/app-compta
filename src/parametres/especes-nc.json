@@ -1,0 +1,19 @@
+{
+  "code": "ESPECES-NC-DEMO",
+  "statut": "NON_VALIDE",
+  "source": null,
+  "avertissement": "VALEURS FICTIVES. Les montants ci-dessous ne proviennent d aucun texte : ils sont la pour que le dispositif de controle soit demontrable, pas pour dire le droit. Aucun office ne doit les utiliser tels quels. La limitation des reglements en especes releve en metropole de l article L. 112-6 du code monetaire et financier ; son applicabilite en Nouvelle-Caledonie et le montant du plafond local doivent etre etablis par la Chambre des notaires de Nouvelle-Caledonie avant toute mise en service. Tant que statut vaut NON_VALIDE, l application le signale en anomalie CRITIQUE.",
+  "remplacer_par": "Les valeurs validees par la Chambre, avec la reference du texte dans le champ source et statut = VALIDE.",
+
+  "plafond_reglement_xpf": 1000000,
+  "plafond_cumul_dossier_xpf": 2000000,
+  "encaisse_maximale_xpf": 300000,
+  "piece_justificative_obligatoire": true,
+
+  "commentaires": {
+    "plafond_reglement_xpf": "Montant maximal d un reglement en especes, encaissement ou decaissement, apprecie par ecriture. null desactive le controle.",
+    "plafond_cumul_dossier_xpf": "Montant maximal cumule des especes recues sur un meme dossier, tous reglements confondus. Barre le fractionnement d un versement en plusieurs remises inferieures au plafond unitaire. null desactive le controle.",
+    "encaisse_maximale_xpf": "Encaisse au-dela de laquelle l application signale une anomalie. Regle de controle interne, non bloquante. null desactive le signalement.",
+    "piece_justificative_obligatoire": "Un mouvement d especes ne laisse aucune trace bancaire : la piece justificative est la seule preuve. true rend sa reference obligatoire a la comptabilisation."
+  }
+}

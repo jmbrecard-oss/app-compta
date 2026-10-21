@@ -13,6 +13,7 @@ import * as Lettrage from './domain/lettrage.js';
 import * as Cloture from './domain/cloture.js';
 import * as Tarif from './domain/tarif.js';
 import * as Etats from './reports/etats.js';
+import { registreDesEspeces } from './domain/especes.js';
 import { genererFEC, nomFichierFEC, versCSV } from './reports/fec.js';
 import { verifierChaineAudit, journalAudit } from './audit.js';
 
@@ -242,6 +243,7 @@ route('GET', '/api/etats/compte-definitif/:id', 'lire', async ({ params }) =>
   Etats.compteDefinitif(Number(params.id)));
 route('GET', '/api/etats/debours-a-reverser', 'lire', async () => etatDeboursAReverser());
 route('GET', '/api/etats/inspection', 'lire', async ({ query }) => Etats.dossierInspection(query));
+route('GET', '/api/etats/registre-especes', 'lire', async ({ query }) => registreDesEspeces(query));
 
 // --------------------------------------------------------- controles et audit
 
@@ -281,6 +283,35 @@ route('GET', '/api/export/balance.csv', 'lire', async ({ query, res }) => {
     { titre: 'Solde crediteur', valeur: 'solde_crediteur' },
   ]);
   texteBrut(res, 'balance.csv', contenu, 'text/csv; charset=utf-8');
+  return null;
+});
+
+route('GET', '/api/export/registre-especes.csv', 'lire', async ({ query, res }) => {
+  const r = registreDesEspeces(query);
+  const lignes = r.caisses.flatMap((c) => c.mouvements.map((m) => ({
+    ...m,
+    caisse: c.compte,
+    signalement: [
+      m.sans_piece ? 'sans piece' : '',
+      m.au_dela_du_plafond ? 'au-dela du plafond' : '',
+      m.solde_negatif ? 'caisse creditrice' : '',
+      m.statut === 'CONTREPASSEE' ? 'contre-passee' : '',
+    ].filter(Boolean).join(' / '),
+  })));
+  const contenu = versCSV(lignes, [
+    { titre: 'Caisse', valeur: 'caisse' },
+    { titre: 'Date', valeur: 'date_ecriture' },
+    { titre: 'Journal', valeur: 'journal' },
+    { titre: 'Numero', valeur: 'numero' },
+    { titre: 'Piece', valeur: 'piece_ref' },
+    { titre: 'Libelle', valeur: 'libelle' },
+    { titre: 'Dossier', valeur: 'dossier' },
+    { titre: 'Encaissement (XPF)', valeur: 'debit' },
+    { titre: 'Decaissement (XPF)', valeur: 'credit' },
+    { titre: 'Solde (XPF)', valeur: 'solde_progressif' },
+    { titre: 'Signalement', valeur: 'signalement' },
+  ]);
+  texteBrut(res, 'registre-especes.csv', contenu, 'text/csv; charset=utf-8');
   return null;
 });
 

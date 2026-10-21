@@ -87,6 +87,11 @@ export const PLAN_COMPTABLE = [
   }),
   C('514000', 'Cheques et effets a encaisser', { sens: 'DEBIT' }),
   C('531000', 'Caisse de l office', { nature: 'CAISSE', sens: 'DEBIT' }),
+  // Les especes recues pour le compte d'un client ne se melent pas a celles de
+  // l'office : caisse distincte, comptee dans la representation des fonds clients.
+  C('531500', 'Caisse - especes detenues pour le compte des clients', {
+    nature: 'DEPOT_FONDS_CLIENTS', sens: 'DEBIT',
+  }),
   C('580000', 'Virements de fonds', { sens: 'INDIFFERENT' }),
 
   // ------------------------------------------------------------------ 6. charges

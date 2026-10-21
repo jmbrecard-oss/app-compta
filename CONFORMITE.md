@@ -100,6 +100,7 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 | Fonds clients détenus sur des comptes de dépôt distincts | Comptes de nature `DEPOT_FONDS_CLIENTS` (512500, 512600), distincts du compte office (512100) | [`src/pcn.js`](src/pcn.js) |
 | Aucune confusion entre recette de l'office et mouvement de fonds clients | `controleEtancheite` : une écriture ne peut mouvementer à la fois un compte de dépôt clients et un compte de charge ou de produit ; les émoluments transitent par le compte client du dossier | test « étanchéité » |
 | Fonds clients représentés à tout instant | `controleRepresentationFonds` : les disponibilités affectées doivent couvrir le total dû aux clients. Contrôle **bloquant** à chaque comptabilisation | test « prélèvement sur les fonds clients refusé » |
+| Les espèces reçues d'un client ne se mêlent pas à celles de l'office | Caisse distincte `531500`, de nature `DEPOT_FONDS_CLIENTS` : elle entre dans la représentation des fonds. `controleEspeces` refuse toute écriture mouvementant à la fois la caisse de l'office (`531000`) et un compte client ou un compte de dépôt clients | test « la caisse de l office ne peut pas recevoir les fonds d un client » |
 
 ### 2. Comptes clients individualisés
 
@@ -171,14 +172,41 @@ corrige que par contre-passation de l'écriture et nouvelle taxe.
 - Lettrage refusé sur un lot déséquilibré.
 - Compte d'attente 471000 signalé dès qu'il n'est pas soldé, bloquant à la clôture.
 
+### 5. Mouvements d'espèces
+
+Les espèces ne laissent aucune trace bancaire : ni relevé, ni rapprochement, ni contrepartie
+chez un tiers. Le registre de caisse et la pièce justificative en sont la seule preuve. D'où un
+jeu de contrôles **bloquants**, et un registre destiné au contrôle.
+
+| Règle | Mise en œuvre | Preuve |
+|---|---|---|
+| Une caisse n'est jamais créditrice | `controleCaisseNonCreditrice` : le contrôle porte sur le **solde progressif**, pas sur le solde final. Une sortie antérieure à la rentrée correspondante laisse un solde final positif et une caisse pourtant à découvert ; elle est refusée | tests « la caisse ne peut pas devenir créditrice » et « … ni à une date intermédiaire » |
+| Tout mouvement d'espèces porte sa pièce justificative | `controleEspeces` exige la référence de pièce (reçu, bordereau, facture acquittée) dès qu'un compte de la subdivision 53 est mouvementé | test « un mouvement d especes sans piece justificative est refuse » |
+| Un règlement en espèces reste sous le plafond | Plafond lu dans le fichier de paramètres, appliqué au total des espèces déplacées **dans un sens** : fractionner un règlement sur plusieurs lignes ne le fait pas passer sous le plafond. Un virement entre comptes de trésorerie de l'office (versement en banque, retrait au guichet) ne règle personne : il n'y est pas soumis | tests « un reglement en especes au-dela du plafond est refuse », « un reglement fractionne sur plusieurs lignes ne passe pas sous le plafond », « le versement des especes en banque n est pas un reglement » |
+| Les règlements cumulés d'un même dossier aussi | `controleCumulEspecesDossier`, évalué après insertion dans la transaction : barre le fractionnement d'un versement en plusieurs remises unitairement conformes. Le plafond est propre à chaque dossier | test « le cumul des especes recues sur un dossier est plafonne » |
+| Chaque remise est imputable à une affaire | Un règlement en espèces ne peut concerner qu'un seul dossier : au-delà, il faut une écriture par affaire | test « un reglement en especes ne peut pas concerner deux dossiers » |
+| Registre des espèces | `registreDesEspeces` : caisse par caisse, chaque mouvement avec sa pièce, son dossier et le solde progressif ; minimum atteint et sa date ; ventilation des espèces reçues par dossier. Écran dédié, export CSV, intégré au dossier d'inspection | tests « le registre des especes retrace chaque mouvement » et « le registre se borne a la periode demandee » |
+
+**Les plafonds ne sont pas dans le code.** Ils relèvent d'un texte — et ce texte n'est pas établi
+pour la Nouvelle-Calédonie. Ils sont donc lus dans `src/parametres/especes-nc.json`, que
+`COMPTA_ESPECES` permet de remplacer, et validés en bloc : un paramétrage mal formé est refusé
+entier, jamais appliqué à moitié. Chaque lecture conserve l'**empreinte SHA-256** du fichier, de
+sorte qu'un contrôle reste vérifiable après remplacement des paramètres.
+
+**Le fichier livré est fictif — et l'application le dit.** Il porte `"statut": "NON_VALIDE"`, un
+avertissement explicite et aucune source. Tant qu'il l'est, une anomalie **CRITIQUE**
+`PARAMETRES_ESPECES_NON_VALIDES` remonte au tableau de bord, au registre et au dossier
+d'inspection. Les plafonds n'en sont pas moins appliqués : une limite trop stricte se desserre,
+une limite absente ne protège de rien.
+
 ### 6. Contrôles périodiques
 
 - **Rapprochement bancaire** : clôture refusée tant qu'un écart subsiste entre solde
   rapproché et solde du relevé.
 - **Clôture d'exercice** : `controlePreCloture` énumère les obstacles — brouillons, comptes
   d'attente non soldés, dossiers débiteurs, fonds non représentés, chaîne altérée,
-  rapprochement manquant. La clôture génère les à-nouveaux et scelle l'exercice par une
-  empreinte.
+  rapprochement manquant, **caisse créditrice à une date quelconque de l'exercice**. La clôture
+  génère les à-nouveaux et scelle l'exercice par une empreinte.
 - **Rôles** : `INSPECTEUR` dispose d'un accès en lecture intégrale et d'aucun droit d'écriture.
 
 ### 7. Restitution des données
@@ -186,8 +214,13 @@ corrige que par contre-passation de l'écriture et nouvelle taxe.
 - **Export FEC** : 18 colonnes, séparateur tabulation, dates AAAAMMJJ. Brouillons exclus par
   construction. Le dossier tient lieu de compte auxiliaire pour les comptes clients.
 - **Dossier d'inspection** : balance, état des comptes clients, représentation des fonds,
-  anomalies, rapprochements, volumétrie, état de la chaîne, piste d'audit — sur un écran unique.
-- Exports CSV de la balance et de l'état des comptes clients.
+  mouvements d'espèces, anomalies, rapprochements, volumétrie, état de la chaîne, piste d'audit —
+  sur un écran unique.
+- Exports CSV de la balance, de l'état des comptes clients et du registre des espèces.
+- **Impression** : feuille `@media print` dédiée aux états destinés au contrôle — identité de
+  l'office en tête, navigation et barres d'outils retirées, en-têtes de tableaux répétés de page
+  en page, colonnes jamais tronquées par un défilement horizontal, signalements rendus lisibles
+  en noir et blanc.
 
 ---
 
@@ -223,6 +256,23 @@ corrige que par contre-passation de l'écriture et nouvelle taxe.
    ouverts auprès de l'établissement teneur.
 5. **Durée de conservation** et modalités de sauvegarde de la base.
 6. **Rapprochement obligatoire** : la clôture exige aujourd'hui un rapprochement clos à la
+1. **Plafond des règlements en espèces.** Les montants de `src/parametres/especes-nc.json` sont
+   **fictifs** et ne proviennent d'aucun texte. En métropole, la limitation des règlements en
+   espèces relève de l'article L. 112-6 du code monétaire et financier ; son applicabilité en
+   Nouvelle-Calédonie et le montant du plafond local restent à établir. Trois réponses sont
+   attendues : le montant d'un règlement unitaire, l'existence et le montant d'un plafond cumulé
+   par dossier, l'encaisse maximale admise. Tant qu'elles manquent, le fichier reste
+   `NON_VALIDE` et l'application le signale en anomalie critique.
+2. **Espèces reçues pour le compte d'un client** : elles transitent par la caisse `531500`, qui
+   entre dans la représentation des fonds. À confirmer que la Chambre admet une encaisse en
+   espèces comme représentation, et dans quelles limites de délai de versement en banque.
+3. **Numérotation des comptes clients** : format retenu `411` + 5 chiffres, à confirmer.
+4. **Seuil de représentation des fonds** : couverture ≥ 100 % exigée en permanence, sans
+   tolérance. À confirmer.
+5. **Comptes de dépôt** : la liste (512500, 512600) doit correspondre aux comptes réellement
+   ouverts auprès de l'établissement teneur.
+6. **Durée de conservation** et modalités de sauvegarde de la base.
+7. **Rapprochement obligatoire** : la clôture exige aujourd'hui un rapprochement clos à la
    date de fin d'exercice pour chaque compte rapprochable.
 
 ---

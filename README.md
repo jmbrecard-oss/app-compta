@@ -72,6 +72,14 @@ client et état des sommes restant à reverser au Trésor.
 
 > Le barème livré est **fictif** et doit être remplacé par le tarif du décret
 > n° 78-321/CG du 26 septembre 1978. Voir [CONFORMITE.md](CONFORMITE.md).
+**Espèces.** Les espèces ne laissent aucune trace bancaire : la pièce justificative
+est exigée à la comptabilisation, un règlement reste sous le plafond — unitaire et
+cumulé par dossier, pour que le fractionnement ne le contourne pas — et une caisse
+n'est jamais créditrice, à aucune date. Les espèces reçues pour un client ont leur
+propre caisse (`531500`), comptée dans la représentation des fonds et jamais mêlée à
+celle de l'office. Un registre reprend chaque mouvement avec son solde progressif.
+Les plafonds sont lus dans `src/parametres/especes-nc.json` : **les valeurs livrées
+sont fictives** et doivent être validées par la Chambre.
 
 **Rapprochement bancaire.** Pointage des mouvements, calcul du solde rapproché,
 clôture refusée tant qu'un écart subsiste.
@@ -79,10 +87,13 @@ clôture refusée tant qu'un écart subsiste.
 **États.** Balance, grand livre, journaux, compte de résultat, bilan, état des
 comptes clients, état de représentation des fonds, état des taxes, état des sommes à
 reverser aux tiers, compte définitif du client. Exports FEC (18 colonnes) et CSV.
+comptes clients, état de représentation des fonds, registre des espèces. Exports FEC
+(18 colonnes) et CSV. Tous s'impriment sur une feuille dédiée : identité de l'office
+en tête, en-têtes de tableaux répétés, aucune colonne tronquée.
 
 **Inspection.** Un écran rassemble ce qu'un contrôle demande : volumétrie, état de
-la chaîne d'inaltérabilité, anomalies classées par gravité, exercices, piste
-d'audit nominative et horodatée.
+la chaîne d'inaltérabilité, mouvements d'espèces, anomalies classées par gravité,
+exercices, piste d'audit nominative et horodatée.
 
 **Clôture d'exercice.** Diagnostic préalable listant chaque obstacle, génération des
 à-nouveaux, scellement de l'exercice par une empreinte.
@@ -118,15 +129,18 @@ src/
     dossiers.js       dossiers et comptes clients individualisés
     bareme.js         moteur de liquidation du tarif (aucun chiffre en dur)
     tarif.js          taxe des actes : projet → arrêté → comptabilisation
+    especes.js        plafonds, caisse jamais créditrice, registre des espèces
     rapprochement.js  rapprochement bancaire
     lettrage.js       lettrage des comptes de tiers
     cloture.js        exercices, pré-clôture, à-nouveaux
+  parametres/
+    especes-nc.json   plafonds des espèces — VALEURS FICTIVES, à faire valider
   reports/
     etats.js          balance, grand livre, résultat, comptes clients, inspection
     fec.js            export FEC et CSV
   server.js           API HTTP et service des fichiers statiques
 public/               interface (HTML/CSS/JS, sans framework)
-test/                 59 tests de conformité
+test/                 tests de conformité
 ```
 
 ## Exploitation
@@ -154,5 +168,10 @@ valeur.
 
 Ne sont pas couverts les déclarations fiscales, la paie, la gestion des actes et
 l'archivage à valeur probante. Voir la section correspondante de
+Périmètre : noyau comptable. Ne sont pas couverts le tarif réglementé et le calcul
+des émoluments, les déclarations fiscales, la paie, la gestion des actes et
+l'archivage à valeur probante. Les plafonds de règlement en espèces livrés avec
+l'application sont **fictifs** : ils rendent le dispositif de contrôle démontrable,
+ils ne disent pas le droit. Voir la section correspondante de
 [CONFORMITE.md](CONFORMITE.md), ainsi que les points à arbitrer avec la Chambre
 avant toute mise en production.

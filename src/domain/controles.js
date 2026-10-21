@@ -2,6 +2,7 @@ import { un, tous } from '../db.js';
 import { ErreurConformite } from '../erreurs.js';
 import { COMPTES_EMOLUMENTS, COMPTES_DEBOURS_TIERS } from '../pcn.js';
 import { baremeCourant, baremeFictif } from './bareme.js';
+import { anomaliesEspeces } from './especes.js';
 
 /**
  * Controles de conformite de la comptabilite notariale.
@@ -419,15 +420,8 @@ export function anomalies() {
     });
   }
 
-  const caisse = un(`SELECT IFNULL(SUM(solde), 0) AS s FROM v_soldes WHERE nature = 'CAISSE'`).s;
-  if (caisse < 0) {
-    liste.push({
-      gravite: 'MAJEURE',
-      code: 'CAISSE_NEGATIVE',
-      objet: 'Caisse',
-      message: `Caisse creditrice de ${-caisse} XPF : impossible physiquement.`,
-    });
-  }
+  // Especes : plafonds, encaisse, caisse creditrice a une date quelconque.
+  liste.push(...anomaliesEspeces());
 
   const dossiersSoldes = tous(
     `SELECT * FROM v_soldes_dossiers WHERE statut = 'OUVERT' AND solde = 0

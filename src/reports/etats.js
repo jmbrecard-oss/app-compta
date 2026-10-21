@@ -1,6 +1,7 @@
 import { un, tous } from '../db.js';
 import { etatRepresentationFonds, etatComptesDebiteurs, etatDeboursAReverser, anomalies } from '../domain/controles.js';
 import { baremeCourant, baremeFictif, listerTaxes, lireTaxe, taxeEnVigueur, taxeAnnulee } from '../domain/tarif.js';
+import { registreDesEspeces } from '../domain/especes.js';
 
 const bornes = (p = {}) => ({
   depuis: p.depuis ?? null,
@@ -266,6 +267,7 @@ export function dossierInspection(p = {}) {
     taxes: etatTaxes(),
     debours_a_reverser: etatDeboursAReverser(),
     anomalies: anomalies(),
+    registre_especes: registreDesEspeces(p),
     comptes_attente: tous(`SELECT * FROM v_soldes WHERE nature = 'ATTENTE'`),
     rapprochements: tous(
       `SELECT r.*, c.intitule FROM rapprochements r JOIN comptes c ON c.numero = r.compte
