@@ -3,6 +3,7 @@ import { etatRepresentationFonds, etatComptesDebiteurs, etatDeboursAReverser, an
 import { baremeCourant, baremeFictif, listerTaxes, lireTaxe, taxeEnVigueur, taxeAnnulee } from '../domain/tarif.js';
 import { registreDesEspeces } from '../domain/especes.js';
 import { etatTgc, periodesTgc } from '../domain/tgc.js';
+import { etatPlacements } from '../domain/placements.js';
 
 const bornes = (p = {}) => ({
   depuis: p.depuis ?? null,
@@ -267,6 +268,7 @@ export function dossierInspection(p = {}) {
     comptes_debiteurs: etatComptesDebiteurs(),
     taxes: etatTaxes(),
     debours_a_reverser: etatDeboursAReverser(),
+    placements: etatPlacements(),
     anomalies: anomalies(),
     registre_especes: registreDesEspeces(p),
     comptes_attente: tous(`SELECT * FROM v_soldes WHERE nature = 'ATTENTE'`),

@@ -16,6 +16,12 @@ import {
 } from './controles.js';
 import { controleEspeces, controleCumulEspecesDossier, controleCaisseNonCreditrice } from './especes.js';
 import { controleTgc } from './tgc.js';
+import {
+  controleRubrication,
+  controleNonCompensationRubriques,
+  controleRubriquesDossiers,
+  dossiersConcernes,
+} from './placements.js';
 
 const EST_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -195,6 +201,8 @@ export function valider(id, utilisateur) {
     controleRattachementActe(lignes, e);
     const especes = controleEspeces(e, lignes);
     controleTgc(lignes, e);
+    controleRubrication(lignes);
+    controleNonCompensationRubriques(lignes);
     const exercice = controleExercice(e.date_ecriture);
     controleChronologie(e.journal, exercice.id, e.date_ecriture);
 
@@ -234,6 +242,7 @@ export function valider(id, utilisateur) {
 
     // La representation des fonds clients, elle, reste bloquante : un deficit
     // signifie que les fonds d'un client ont servi a autre chose.
+    controleRubriquesDossiers(dossiersConcernes(lignes));
     controleRepresentationFonds();
     if (especes) {
       controleCumulEspecesDossier(especes.dossiers);

@@ -80,6 +80,11 @@ propre caisse (`531500`), comptée dans la représentation des fonds et jamais m
 celle de l'office. Un registre reprend chaque mouvement avec son solde progressif.
 Les plafonds sont lus dans `src/parametres/especes-nc.json` : **les valeurs livrées
 sont fictives** et doivent être validées par la Chambre.
+**Placements de fonds clients.** Les fonds placés en compte rubriqué restent rattachés
+nominativement à leur dossier : un mouvement sans dossier désigné est refusé, un dossier
+ne peut pas voir placer plus que ce qu'il détient ni retirer plus qu'il n'a placé, et les
+produits du placement reviennent au dossier qui les a produits. Un état de contrôle
+rapproche la somme des rubriques du solde des comptes de placement.
 
 **Rapprochement bancaire.** Pointage des mouvements, calcul du solde rapproché,
 clôture refusée tant qu'un écart subsiste.
@@ -105,6 +110,8 @@ en tête, en-têtes de tableaux répétés, aucune colonne tronquée.
 comptes clients, état de représentation des fonds. Exports FEC (18 colonnes) et CSV.
 Tous les états s'impriment : en-têtes de tableaux répétés sur chaque page, aucune
 colonne tronquée, identité de l'office en tête du document.
+comptes clients, état de représentation des fonds, état des placements rubriqués.
+Exports FEC (18 colonnes) et CSV.
 
 **Inspection.** Un écran rassemble ce qu'un contrôle demande : volumétrie, état de
 la chaîne d'inaltérabilité, mouvements d'espèces, anomalies classées par gravité,
@@ -145,6 +152,7 @@ src/
     bareme.js         moteur de liquidation du tarif (aucun chiffre en dur)
     tarif.js          taxe des actes : projet → arrêté → comptabilisation
     especes.js        plafonds, caisse jamais créditrice, registre des espèces
+    placements.js     comptes rubriqués, placements et produits affectés
     rapprochement.js  rapprochement bancaire
     lettrage.js       lettrage des comptes de tiers
     tgc.js            contrôle de la taxe, état préparatoire, relance des périodes
@@ -159,6 +167,7 @@ src/
 public/               interface (HTML/CSS/JS, sans framework)
 test/                 tests de conformité
 test/                 51 tests de conformité
+test/                 35 tests de conformité
 ```
 
 ## Exploitation

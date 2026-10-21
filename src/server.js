@@ -8,6 +8,7 @@ import { connecter, deconnecter, utilisateurDuJeton, exigerDroit, listerUtilisat
 import { ErreurConformite, anomalies, etatRepresentationFonds, etatComptesDebiteurs, etatDeboursAReverser } from './domain/controles.js';
 import * as Ecritures from './domain/ecritures.js';
 import * as Dossiers from './domain/dossiers.js';
+import { etatPlacements } from './domain/placements.js';
 import * as Rapprochement from './domain/rapprochement.js';
 import * as Lettrage from './domain/lettrage.js';
 import * as Cloture from './domain/cloture.js';
@@ -243,6 +244,7 @@ route('GET', '/api/etats/taxes', 'lire', async ({ query }) => Etats.etatTaxes({
 route('GET', '/api/etats/compte-definitif/:id', 'lire', async ({ params }) =>
   Etats.compteDefinitif(Number(params.id)));
 route('GET', '/api/etats/debours-a-reverser', 'lire', async () => etatDeboursAReverser());
+route('GET', '/api/etats/placements', 'lire', async () => etatPlacements());
 route('GET', '/api/etats/inspection', 'lire', async ({ query }) => Etats.dossierInspection(query));
 route('GET', '/api/etats/registre-especes', 'lire', async ({ query }) => registreDesEspeces(query));
 
@@ -351,6 +353,18 @@ route('GET', '/api/export/tgc.csv', 'lire', async ({ query, res }) => {
     { titre: 'Ecritures', valeur: 'ecritures' },
   ]);
   texteBrut(res, 'tgc.csv', contenu, 'text/csv; charset=utf-8');
+route('GET', '/api/export/placements.csv', 'lire', async ({ res }) => {
+  const e = etatPlacements();
+  const contenu = versCSV(e.dossiers, [
+    { titre: 'Dossier', valeur: 'reference' },
+    { titre: 'Intitule', valeur: 'intitule' },
+    { titre: 'Compte client', valeur: 'compte_client' },
+    { titre: 'Place en rubrique (XPF)', valeur: 'place' },
+    { titre: 'Fonds detenus (XPF)', valeur: 'fonds_dus' },
+    { titre: 'Disponible non place (XPF)', valeur: 'disponible_non_place' },
+    { titre: 'Produits affectes (XPF)', valeur: 'produits_affectes' },
+  ]);
+  texteBrut(res, 'placements-rubriques.csv', contenu, 'text/csv; charset=utf-8');
   return null;
 });
 

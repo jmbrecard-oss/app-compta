@@ -72,6 +72,10 @@ CREATE TABLE IF NOT EXISTS comptes (
   lettrable    INTEGER NOT NULL DEFAULT 0,
   rapprochable INTEGER NOT NULL DEFAULT 0,
   collectif    INTEGER NOT NULL DEFAULT 0,   -- compte de regroupement, non mouvemente
+  -- rubrique : compte de depot ouvert par sous-comptes nominatifs. Chaque
+  -- mouvement y designe obligatoirement le dossier auquel les fonds places
+  -- appartiennent (cf. src/domain/placements.js).
+  rubrique     INTEGER NOT NULL DEFAULT 0,
   actif        INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_comptes_nature ON comptes(nature);
@@ -376,3 +380,18 @@ FROM dossiers d
 LEFT JOIN lignes    l ON l.compte = d.compte_client
 LEFT JOIN ecritures e ON e.id = l.ecriture_id
 GROUP BY d.id;
+
+-- Ventilation par dossier des comptes de depot rubriques. solde > 0 = fonds du
+-- dossier actuellement places. Les mouvements sans dossier sont impossibles :
+-- controleRubrication les refuse a la comptabilisation.
+CREATE VIEW IF NOT EXISTS v_rubriques AS
+SELECT d.id AS dossier_id, d.reference, d.intitule, d.statut, d.compte_client,
+       l.compte,
+       IFNULL(SUM(l.debit), 0)  AS total_debit,
+       IFNULL(SUM(l.credit), 0) AS total_credit,
+       IFNULL(SUM(l.debit), 0) - IFNULL(SUM(l.credit), 0) AS solde
+FROM lignes l
+JOIN ecritures e ON e.id = l.ecriture_id AND e.statut IN ('VALIDEE','CONTREPASSEE')
+JOIN comptes   c ON c.numero = l.compte AND c.rubrique = 1
+JOIN dossiers  d ON d.id = l.dossier_id
+GROUP BY d.id, l.compte;

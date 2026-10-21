@@ -14,8 +14,28 @@ export function ouvrirBase(chemin = process.env.COMPTA_DB ?? join(RACINE, 'data'
   db = new DatabaseSync(chemin);
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
+  migrer(db);
   db.exec(readFileSync(join(ici, 'schema.sql'), 'utf8'));
   return db;
+}
+
+/**
+ * Mises a niveau du schema d'une base deja installee.
+ *
+ * schema.sql est rejoue a chaque ouverture, mais CREATE TABLE IF NOT EXISTS
+ * n'ajoute aucune colonne a une table existante. Les ajouts de colonne sont
+ * donc declares ici, et appliques AVANT schema.sql pour que les vues qui s'y
+ * appuient puissent etre creees.
+ */
+const MIGRATIONS = [
+  { table: 'comptes', colonne: 'rubrique', sql: 'ALTER TABLE comptes ADD COLUMN rubrique INTEGER NOT NULL DEFAULT 0' },
+];
+
+function migrer(db) {
+  for (const m of MIGRATIONS) {
+    const colonnes = db.prepare(`PRAGMA table_info(${m.table})`).all().map((c) => c.name);
+    if (colonnes.length && !colonnes.includes(m.colonne)) db.exec(m.sql);
+  }
 }
 
 export function base() {

@@ -6,6 +6,7 @@ import { anomaliesEspeces } from './especes.js';
 // Cycle assume : tgc.js n'utilise ErreurConformite qu'a l'interieur de ses
 // fonctions, et controles.js n'appelle anomaliesTgc qu'a l'execution.
 import { anomaliesTgc } from './tgc.js';
+import { anomaliesPlacements } from './placements.js';
 
 /**
  * Controles de conformite de la comptabilite notariale.
@@ -360,6 +361,8 @@ export function etatDeboursAReverser() {
 // Controles signales : tableau de bord et dossier d'inspection
 // --------------------------------------------------------------------------
 
+const GRAVITES = ['CRITIQUE', 'MAJEURE', 'MINEURE', 'INFORMATION'];
+
 export function anomalies() {
   const liste = [];
 
@@ -440,6 +443,9 @@ export function anomalies() {
   }
 
   liste.push(...anomaliesTgc());
+  liste.push(...anomaliesPlacements());
 
-  return liste;
+  // Le plus grave en tete : c'est dans cet ordre que le tableau de bord et le
+  // dossier d'inspection les presentent.
+  return liste.sort((a, b) => GRAVITES.indexOf(a.gravite) - GRAVITES.indexOf(b.gravite));
 }

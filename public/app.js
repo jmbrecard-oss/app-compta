@@ -167,6 +167,52 @@ async function vueTableau() {
     </div>`;
 }
 
+/**
+ * Placements en compte rubrique : ce que le controle verifie d'abord, c'est
+ * que la somme des rubriques des dossiers reconstitue exactement le solde du
+ * compte de depot, et que chaque dossier reste couvert par ses propres fonds.
+ */
+const cartePlacements = (p) => `
+  <div class="carte" style="margin-top:1rem">
+    <header>
+      <h2>Placements en compte rubriqué</h2>
+      <a class="lien" href="/api/export/placements.csv" download>Exporter (CSV)</a>
+    </header>
+    <div class="alerte ${p.ventilation_conforme ? 'information' : ''}">
+      <strong>Ventilation des fonds placés</strong>
+      ${p.ventilation_conforme
+        ? `${xpf(p.solde_comptes)} XPF placés, intégralement rattachés aux dossiers.`
+        : `Écart de ${xpf(p.ecart_ventilation)} XPF entre le solde des comptes rubriqués et la somme des rubriques des dossiers.`}
+    </div>
+    ${p.dossiers.length ? `
+    <div class="defilant"><table>
+      <thead><tr>
+        <th>Dossier</th><th>Intitulé</th>
+        <th class="nb">Placé</th><th class="nb">Fonds détenus</th>
+        <th class="nb">Non placé</th><th class="nb">Produits affectés</th>
+      </tr></thead>
+      <tbody>${p.dossiers.map((d) => `
+        <tr>
+          <td class="compte">${echapper(d.reference)}</td>
+          <td>${echapper(d.intitule)}</td>
+          <td class="${d.conforme ? 'nb' : 'nb negatif'}">${xpf(d.place)}${d.conforme ? '' : ' ⚠'}</td>
+          <td class="nb">${xpf(d.fonds_dus)}</td>
+          <td class="nb">${xpf(d.disponible_non_place)}</td>
+          <td class="nb">${xpf(d.produits_affectes)}</td>
+        </tr>`).join('')}
+      </tbody>
+      <tfoot><tr>
+        <th colspan="2">Total</th><th class="nb">${xpf(p.total_ventile)}</th>
+        <th></th><th></th><th class="nb">${xpf(p.total_produits_affectes)}</th>
+      </tr></tfoot>
+    </table></div>`
+      : '<p class="vide">Aucun dossier n\'a de fonds placés en compte rubriqué.</p>'}
+    <p class="vide" style="font-style:normal">
+      Les produits d'un placement reviennent au dossier qui les a produits : leur inscription
+      en produit de l'office est refusée à la comptabilisation.
+    </p>
+  </div>`;
+
 const carteAnomalie = (a) => `
   <div class="alerte ${a.gravite.toLowerCase()}">
     <strong>${echapper(a.gravite)} — ${echapper(a.objet)}</strong>${echapper(a.message)}
@@ -221,6 +267,10 @@ const MODELES = [
     journal: 'BQC',
     lignes: [
       { compte: '448600', sens: 'debit', dossier: true },
+    nom: 'Placement des fonds du dossier en compte rubriqué',
+    journal: 'BQC',
+    lignes: [
+      { compte: '512600', sens: 'debit', dossier: true },
       { compte: '512500', sens: 'credit' },
     ],
   },
@@ -251,6 +301,21 @@ const MODELES = [
     lignes: [
       { compte: '606400', sens: 'debit' },
       { compte: '531000', sens: 'credit' },
+    ],
+  },
+    nom: 'Dénouement d\'un placement rubriqué',
+    journal: 'BQC',
+    lignes: [
+      { compte: '512500', sens: 'debit' },
+      { compte: '512600', sens: 'credit', dossier: true },
+    ],
+  },
+  {
+    nom: 'Produits du placement affectés au dossier',
+    journal: 'BQC',
+    lignes: [
+      { compte: '512600', sens: 'debit', dossier: true },
+      { compte: '', sens: 'credit', client: true },
     ],
   },
   { nom: 'Écriture libre', journal: 'OD', lignes: [{ compte: '' }, { compte: '' }] },
@@ -349,6 +414,13 @@ function ajouterLigne(modele = {}) {
     const compte = $('.l-compte', tr);
     const choisi = e.target.selectedOptions[0]?.dataset.compte;
     if (choisi && (!compte.value || estCompteClient(compte.value))) compte.value = choisi;
+  // Le choix d'un dossier impute son compte client tant qu'aucun compte n'est
+  // saisi. Sur une ligne deja imputee — placement rubrique, debours — il se
+  // borne a designer le dossier, qui est transmis avec la ligne.
+  $('.l-dossier', tr).addEventListener('change', (e) => {
+    const compteClient = e.target.selectedOptions[0]?.dataset.compte;
+    const champ = $('.l-compte', tr);
+    if (compteClient && !champ.value) champ.value = compteClient;
     recalculer();
   });
   // Debit et credit s'excluent sur une meme ligne.
@@ -366,6 +438,7 @@ function appliquerModele(index) {
     const tr = ajouterLigne(l);
     if (l.client) $('.l-compte', tr).title = 'Sélectionner le dossier';
     if (l.dossier) $('.l-dossier', tr).title = 'Dossier au titre duquel la somme est due — obligatoire';
+    if (l.dossier) $('.l-dossier', tr).title = 'Compte rubriqué : le dossier propriétaire des fonds est obligatoire';
   }
   recalculer();
 }
@@ -374,6 +447,7 @@ function lireLignes() {
   return $$('#lignes tr').map((tr) => ({
     compte: $('.l-compte', tr).value,
     dossier_id: Number($('.l-dossier', tr).value) || null,
+    dossier_id: $('.l-dossier', tr).value ? Number($('.l-dossier', tr).value) : null,
     libelle: $('.l-libelle', tr).value,
     debit: Number($('.l-debit', tr).value || 0),
     credit: Number($('.l-credit', tr).value || 0),
@@ -572,6 +646,7 @@ async function detailDossier(id) {
             ${d.solde > 0 ? `Débiteur de ${xpf(d.solde)} XPF` : `Fonds détenus : ${xpf(-d.solde)} XPF`}
           </span>
           <button class="secondaire" id="compte-definitif">Compte définitif</button>
+          ${d.place_en_rubrique ? `<span class="pastille minuscule">dont ${xpf(d.place_en_rubrique)} XPF placés en compte rubriqué</span>` : ''}
           ${d.statut === 'OUVERT' && d.solde === 0 ? `<button class="secondaire" id="clore-dossier">Clore</button>` : ''}
         </div>
       </header>
@@ -1000,6 +1075,7 @@ async function vueEtats() {
         <a href="/api/export/balance.csv" download><button type="button" class="secondaire">Balance CSV</button></a>
         <a href="/api/export/comptes-clients.csv" download><button type="button" class="secondaire">Clients CSV</button></a>
         <button type="button" id="e-imprimer" class="secondaire">Imprimer</button>
+        <a href="/api/export/placements.csv" download><button type="button" class="secondaire">Placements CSV</button></a>
       </div>
       <div id="rendu-etat"></div>
     </div>`;
@@ -1255,6 +1331,8 @@ async function vueInspection() {
         <div><span class="libelle-indicateur">Fonds clients</span><div class="indicateur">${xpf(d.representation_fonds.du_aux_clients)}</div></div>
       </div>
     </div>
+
+    ${cartePlacements(d.placements)}
 
     <div class="carte" style="margin-top:1rem">
       <h2>Intégrité de la comptabilité</h2>
