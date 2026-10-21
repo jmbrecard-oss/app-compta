@@ -204,6 +204,7 @@ route('GET', '/api/etats/resultat', 'lire', async ({ query }) => Etats.compteDeR
 route('GET', '/api/etats/bilan', 'lire', async ({ query }) => Etats.bilan(query));
 route('GET', '/api/etats/comptes-clients', 'lire', async () => Etats.etatComptesClients());
 route('GET', '/api/etats/representation-fonds', 'lire', async () => etatRepresentationFonds());
+route('GET', '/api/etats/comptes-debiteurs', 'lire', async () => etatComptesDebiteurs());
 route('GET', '/api/etats/inspection', 'lire', async ({ query }) => Etats.dossierInspection(query));
 
 // --------------------------------------------------------- controles et audit

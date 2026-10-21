@@ -347,8 +347,13 @@ async function soumettre(valider) {
   const ecriture = await api('/ecritures', { methode: 'POST', corps: { ...donnees, lignes } });
   if (valider) {
     try {
-      await api(`/ecritures/${ecriture.id}/valider`, { methode: 'POST', corps: {} });
-      message(`Écriture comptabilisée (${ecriture.journal}).`);
+      const posee = await api(`/ecritures/${ecriture.id}/valider`, { methode: 'POST', corps: {} });
+      // Une alerte n'empêche pas la comptabilisation : elle la commente.
+      if (posee.alertes?.length) {
+        message(`Écriture comptabilisée (${ecriture.journal}). ⚠ ${posee.alertes.map((a) => a.message).join(' ')}`, true);
+      } else {
+        message(`Écriture comptabilisée (${ecriture.journal}).`);
+      }
     } catch (e) {
       // L'ecriture reste en brouillon : le refus est explique a l'utilisateur.
       message(`Comptabilisation refusée — ${e.message} L'écriture est conservée en brouillon.`, true);

@@ -7,7 +7,9 @@ import { ouvrirBase, base, un, exec } from '../src/db.js';
 import { initialiser } from '../src/init.js';
 import { creerBrouillon, valider, contrepasser, verifierChaineEcritures } from '../src/domain/ecritures.js';
 import { ouvrirDossier, cloreDossier } from '../src/domain/dossiers.js';
-import { etatRepresentationFonds, anomalies } from '../src/domain/controles.js';
+import { etatRepresentationFonds,
+  etatComptesDebiteurs, anomalies } from '../src/domain/controles.js';
+import { controlePreCloture } from '../src/domain/cloture.js';
 import { lettrer } from '../src/domain/lettrage.js';
 import { genererFEC } from '../src/reports/fec.js';
 import { balance } from '../src/reports/etats.js';
@@ -65,19 +67,53 @@ test('reception de fonds : le compte client devient crediteur', () => {
   assert.equal(d.solde, -5_000_000);
 });
 
-test('un compte client ne peut pas devenir debiteur', () => {
+test('un compte client devenu debiteur alerte sans bloquer la comptabilisation', () => {
+  // L'office regle un debours avant d'avoir recu la provision : cas courant.
+  // Les fonds sortent du compte de l'office, pas du depot des fonds clients,
+  // de sorte que l'argent des autres clients n'est pas touche.
   const b = creerBrouillon({
-    journal: 'BQC', date_ecriture: LE('03-03'), libelle: 'Debours superieur a la provision',
+    journal: 'BQO', date_ecriture: LE('03-03'), libelle: 'Debours avance par l office',
     lignes: [
-      { compte: dossier2.compte_client, libelle: 'Debours', debit: 300_000 },
-      { compte: '512500', libelle: 'Paiement', credit: 300_000 },
+      { compte: dossier2.compte_client, libelle: 'Debours avance', debit: 300_000 },
+      { compte: '512100', libelle: 'Paiement depuis le compte office', credit: 300_000 },
     ],
   }, notaire);
-  refuse('SOLDE_CLIENT_DEBITEUR', () => valider(b.id, notaire));
 
-  // La transaction a ete annulee : rien n'est comptabilise.
-  assert.equal(un('SELECT statut FROM ecritures WHERE id = $id', { id: b.id }).statut, 'BROUILLON');
-  assert.equal(un('SELECT solde FROM v_soldes_dossiers WHERE id = $id', { id: dossier2.id }).solde, 0);
+  const e = valider(b.id, notaire);
+
+  // L'ecriture est bien comptabilisee...
+  assert.equal(e.statut, 'VALIDEE');
+  assert.equal(un('SELECT solde FROM v_soldes_dossiers WHERE id = $id', { id: dossier2.id }).solde, 300_000);
+
+  // ...mais elle remonte une alerte nominative.
+  assert.equal(e.alertes.length, 1);
+  assert.equal(e.alertes[0].code, 'SOLDE_CLIENT_DEBITEUR');
+  assert.equal(e.alertes[0].solde, 300_000);
+
+  // L'alerte est tracee dans la piste d'audit.
+  const trace = un(
+    `SELECT details FROM audit WHERE action = 'ALERTE_SOLDE_DEBITEUR' ORDER BY id DESC LIMIT 1`,
+  );
+  assert.match(trace.details, /debiteur de 300000 XPF/);
+});
+
+test('l etat des comptes debiteurs date la bascule et chiffre l avance', () => {
+  const etat = etatComptesDebiteurs();
+  assert.equal(etat.nombre, 1);
+  assert.equal(etat.total_avance, 300_000);
+
+  const l = etat.lignes[0];
+  assert.equal(l.reference, dossier2.reference);
+  assert.equal(l.avance, 300_000);
+  assert.equal(l.debiteur_depuis, LE('03-03'));
+  assert.ok(l.anciennete_jours >= 0);
+});
+
+test('un dossier debiteur interdit la cloture de l exercice', () => {
+  const ex = un("SELECT id FROM exercices WHERE statut = 'OUVERT' LIMIT 1");
+  const diagnostic = controlePreCloture(ex.id);
+  assert.ok(diagnostic.obstacles.some((o) => o.code === 'CLIENT_DEBITEUR'),
+    'la regularisation doit rester exigee avant la cloture');
 });
 
 test('les fonds clients restent representes par les disponibilites', () => {
@@ -250,8 +286,13 @@ test('le FEC comporte les 18 colonnes normalisees et aucun brouillon', () => {
   assert.ok(fec.includes('D-001'));
 });
 
-test('les anomalies remontent les brouillons restes en attente', () => {
+test('les anomalies remontent les brouillons et les comptes debiteurs', () => {
   const liste = anomalies();
   assert.ok(liste.some((a) => a.code === 'BROUILLONS_EN_ATTENTE'));
-  assert.ok(!liste.some((a) => a.code === 'SOLDE_CLIENT_DEBITEUR'));
+
+  // Le compte devenu debiteur plus haut n'a pas bloque la saisie, mais il
+  // figure au dossier d'inspection, date et chiffre.
+  const debiteur = liste.find((a) => a.code === 'SOLDE_CLIENT_DEBITEUR');
+  assert.ok(debiteur, 'le compte debiteur doit figurer parmi les anomalies');
+  assert.match(debiteur.message, /300000 XPF depuis le/);
 });

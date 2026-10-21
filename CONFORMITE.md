@@ -105,7 +105,7 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 | Règle | Mise en œuvre |
 |---|---|
 | Un compte distinct par dossier, jamais un compte collectif | Compte `411xxxxx` créé à l'ouverture du dossier, jamais réattribué. Le compte collectif 411000 est marqué `collectif` ; son imputation est refusée |
-| **Aucun compte client débiteur** | `controleSoldeClients`, exécuté après insertion des lignes dans la transaction : si le solde devient débiteur, l'écriture entière est annulée et reste en brouillon |
+| **Compte client débiteur : alerte, pas refus** | `alerteSoldeClients` signale sans bloquer — un débours réglé avant l'arrivée de la provision est courant et ne doit pas empêcher la saisie. L'alerte est remontée à l'écran, tracée dans la piste d'audit, et le dossier entre à l'`etatComptesDebiteurs` avec la date de bascule et son ancienneté. La régularisation reste **exigée avant la clôture** de l'exercice |
 | Pas de compensation entre dossiers | Contrôle dossier par dossier ; un dossier créditeur ne compense jamais un dossier débiteur |
 | Un dossier ne se clôt que soldé | `cloreDossier` refuse tant que le solde n'est pas nul |
 

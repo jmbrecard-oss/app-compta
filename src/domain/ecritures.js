@@ -8,7 +8,7 @@ import {
   controleComptes,
   controleExercice,
   controleChronologie,
-  controleSoldeClients,
+  alerteSoldeClients,
   controleRepresentationFonds,
   controleEtancheite,
 } from './controles.js';
@@ -191,14 +191,24 @@ export function valider(id, utilisateur) {
       .map((l) => un('SELECT numero, nature FROM comptes WHERE numero = $n', { n: l.compte }))
       .filter((c) => c?.nature === 'CLIENT')
       .map((c) => c.numero);
-    controleSoldeClients(comptesClients);
+    // Le solde client debiteur ALERTE mais ne bloque pas : un debours regle
+    // avant l'arrivee de la provision est courant. L'anomalie est tracee,
+    // portee a l'etat des comptes debiteurs, et la regularisation est exigee
+    // a la cloture de l'exercice.
+    const alertes = alerteSoldeClients(comptesClients);
+
+    // La representation des fonds clients, elle, reste bloquante : un deficit
+    // signifie que les fonds d'un client ont servi a autre chose.
     controleRepresentationFonds();
 
     tracer(
       utilisateur.identifiant, 'COMPTABILISATION', 'ecriture', id,
       `${e.journal}-${numero} ${e.date_ecriture} ${e.libelle} hash=${hash.slice(0, 16)}`,
     );
-    return lire(id);
+    for (const a of alertes) {
+      tracer(utilisateur.identifiant, 'ALERTE_SOLDE_DEBITEUR', 'ecriture', id, a.message);
+    }
+    return { ...lire(id), alertes };
   });
 }
 

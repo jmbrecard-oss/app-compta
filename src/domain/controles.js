@@ -137,21 +137,75 @@ export function controleChronologie(journal, exerciceId, dateEcriture) {
  * Le controle est effectue APRES insertion des lignes, dans la transaction,
  * de sorte que l'etat teste soit l'etat reel resultant de l'ecriture.
  */
-export function controleSoldeClients(comptesClients) {
-  const fautifs = [];
+export function alerteSoldeClients(comptesClients) {
+  const debiteurs = [];
   for (const compte of new Set(comptesClients)) {
     const r = un('SELECT solde, reference, intitule FROM v_soldes_dossiers WHERE compte_client = $c', { c: compte });
-    if (r && r.solde > 0) fautifs.push({ compte, ...r });
+    if (r && r.solde > 0) debiteurs.push({ compte, ...r });
   }
-  if (fautifs.length) {
-    const d = fautifs[0];
-    throw new ErreurConformite(
-      'SOLDE_CLIENT_DEBITEUR',
-      `Dossier ${d.reference} : le compte client deviendrait debiteur de ${d.solde} XPF. `
-      + `L office ne peut pas avancer de fonds pour le compte d un client.`,
-      { dossiers: fautifs },
+  return debiteurs.map((d) => ({
+    gravite: 'MAJEURE',
+    code: 'SOLDE_CLIENT_DEBITEUR',
+    compte: d.compte,
+    reference: d.reference,
+    solde: d.solde,
+    message: `Dossier ${d.reference} : compte client debiteur de ${d.solde} XPF. `
+      + `L office avance des fonds pour le compte du client ; a regulariser avant la cloture.`,
+  }));
+}
+
+/**
+ * Etat des comptes clients debiteurs.
+ *
+ * Donne, pour chaque dossier debiteur, le montant avance par l'office et la
+ * date a laquelle le compte a bascule : c'est l'anciennete qui rend l'anomalie
+ * grave, pas le fait ponctuel d'un debours regle avant l'arrivee de la
+ * provision.
+ */
+export function etatComptesDebiteurs() {
+  const dossiers = tous('SELECT * FROM v_soldes_dossiers WHERE solde > 0 ORDER BY solde DESC');
+  const aujourdhui = new Date().toISOString().slice(0, 10);
+
+  const lignes = dossiers.map((d) => {
+    // Solde progressif du compte : la bascule est la premiere ecriture apres
+    // laquelle le cumul ne repasse plus jamais a zero ou en dessous.
+    const mouvements = tous(
+      `SELECT e.date_ecriture,
+              SUM(l.debit - l.credit) OVER (ORDER BY e.date_ecriture, e.id
+                                            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumul
+       FROM lignes l JOIN ecritures e ON e.id = l.ecriture_id
+       WHERE l.compte = $c AND e.statut <> 'BROUILLON'
+       ORDER BY e.date_ecriture, e.id`,
+      { c: d.compte_client },
     );
-  }
+    let bascule = null;
+    for (const m of mouvements) bascule = m.cumul > 0 ? (bascule ?? m.date_ecriture) : null;
+
+    const jours = bascule
+      ? Math.round((Date.parse(aujourdhui) - Date.parse(bascule)) / 86_400_000)
+      : 0;
+
+    return {
+      dossier_id: d.id,
+      reference: d.reference,
+      intitule: d.intitule,
+      compte_client: d.compte_client,
+      avance: d.solde,
+      debiteur_depuis: bascule,
+      anciennete_jours: jours,
+      // Un debours regle la veille de la provision n'a pas la meme portee
+      // qu'une avance vieille de plusieurs mois.
+      gravite: jours >= 30 ? 'CRITIQUE' : 'MAJEURE',
+    };
+  });
+
+  return {
+    arrete_au: aujourdhui,
+    nombre: lignes.length,
+    total_avance: lignes.reduce((t, l) => t + l.avance, 0),
+    a_relancer: lignes.filter((l) => l.anciennete_jours >= 30).length,
+    lignes,
+  };
 }
 
 /**
@@ -226,12 +280,13 @@ export function controleEtancheite(lignes) {
 export function anomalies() {
   const liste = [];
 
-  for (const d of tous('SELECT * FROM v_soldes_dossiers WHERE solde > 0')) {
+  for (const d of etatComptesDebiteurs().lignes) {
     liste.push({
-      gravite: 'CRITIQUE',
+      gravite: d.gravite,
       code: 'SOLDE_CLIENT_DEBITEUR',
       objet: `Dossier ${d.reference}`,
-      message: `Compte client debiteur de ${d.solde} XPF : avance de fonds par l office.`,
+      message: `Compte client debiteur de ${d.avance} XPF depuis le ${d.debiteur_depuis} `
+        + `(${d.anciennete_jours} jour(s)) : avance de fonds par l office, a regulariser.`,
     });
   }
 
