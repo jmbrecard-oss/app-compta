@@ -202,8 +202,25 @@ une limite absente ne protège de rien.
 
 ### 6. Contrôles périodiques
 
-- **Rapprochement bancaire** : clôture refusée tant qu'un écart subsiste entre solde
-  rapproché et solde du relevé.
+**Rapprochement bancaire.** Un rapprochement isolé ne prouve rien. Entre deux arrêtés
+rapprochés, aucune vérification externe ne couvre les fonds détenus : seule une série
+continue établit que les sommes inscrites en comptabilité correspondent, période après
+période, aux avoirs réellement détenus par l'établissement teneur du compte. Le logiciel
+surveille donc la *continuité* des rapprochements, compte par compte.
+
+| Règle | Mise en œuvre | Preuve |
+|---|---|---|
+| Un rapprochement ne se clôt pas sur un écart | `cloreRapprochement` refuse tant que solde rapproché ≠ solde du relevé | refus `RAPPROCHEMENT_NON_JUSTIFIE` |
+| Arrêté normalisé et solde du relevé entier | `ouvrirRapprochement` refuse une date hors format AAAA-MM-JJ — le calendrier des périodes en dépend — et un solde de relevé non entier : pas de troncature silencieuse du franc Pacifique | test « un rapprochement exige une date d'arrêté et un solde de relevé exploitables » |
+| Périodicité surveillée compte par compte | `calendrierRapprochements` construit le calendrier depuis le premier mouvement comptabilisé et qualifie chaque période : couverte, en cours, attendue, manquante | test « le calendrier part du premier mouvement comptabilisé et ne retient que les périodes révolues » |
+| Un arrêté en cours de période ne couvre pas la période | seul un rapprochement clos **au dernier jour** de la période la couvre ; un arrêté au 15 du mois laisse la fin de mois non vérifiée | test « un rapprochement arrêté en cours de mois ne couvre pas la période » |
+| Un rapprochement ouvert et jamais clos ne vaut pas rapprochement | période `MANQUANTE`, signalée `inacheve` | test « un rapprochement ouvert mais jamais clos ne couvre pas la période » |
+| Délai de production du relevé | une période n'est exigible qu'au terme du délai paramétré ; avant, elle est `ATTENDUE` et n'alimente aucune relance | test « une période n'est exigible qu'au terme du délai de production du relevé » |
+| **Pas de rapprochement sans le précédent** | `cloreRapprochement` refuse (`RAPPROCHEMENT_ANTERIEUR_MANQUANT`) tant qu'une période antérieure n'est pas close : le solde d'ouverture de la période n'aurait jamais été justifié. Le rapprochement peut être préparé et pointé, pas clos | test « clore un rapprochement est refusé tant qu'une période antérieure ne l'est pas » |
+| Relance automatique des périodes non effectuées | `relancesRapprochements` alimente le tableau de bord, l'écran Rapprochement et le dossier d'inspection. Gravité majorée sur les comptes de dépôt des fonds clients : ce sont les fonds d'autrui qui cessent d'être contrôlés | tests « la gravité des relances distingue les fonds clients des comptes de l'office » et « les anomalies signalent les rapprochements périodiques non effectués » |
+| **Toutes les périodes de l'exercice rapprochées avant la clôture** | `controlePreCloture` énumère chaque période non couverte, compte par compte. Un unique rapprochement au 31 décembre ne suffit plus | test « la pré-clôture refuse un exercice dont les périodes intermédiaires ne sont pas rapprochées » |
+| Périodicité et délai paramétrables | `PERIODICITE_MOIS` et `DELAI_PRODUCTION_JOURS` dans [`src/domain/surveillance.js`](src/domain/surveillance.js) — valeurs par défaut (mensuelle, 15 jours) **à confirmer par la Chambre** | test « la périodicité du rapprochement est paramétrable » |
+
 - **Clôture d'exercice** : `controlePreCloture` énumère les obstacles — brouillons, comptes
   d'attente non soldés, dossiers débiteurs, fonds non représentés, chaîne altérée,
   rapprochement manquant, **caisse créditrice à une date quelconque de l'exercice**. La clôture
@@ -361,6 +378,13 @@ figure parmi les points à arbitrer ci-dessous.
    dossier en Nouvelle-Calédonie ; la convention retenue pour identifier un produit affecté
    (cf. partie II, § 7) est-elle celle attendue d'un contrôle ; le dénouement du placement
    doit-il précéder la clôture du dossier, comme le logiciel l'impose aujourd'hui.
+4. **Durée de conservation** et modalités de sauvegarde de la base.
+5. **Périodicité des rapprochements** : la clôture exige désormais que **chaque période**
+   de l'exercice soit rapprochée et close, et non le seul arrêté de fin d'exercice. Trois
+   paramètres restent à confirmer : la **périodicité** (mensuelle par défaut), le **délai de
+   production du relevé** (15 jours), et la règle selon laquelle une période n'est couverte
+   que par un arrêté au **dernier jour** de la période. Aucun texte calédonien consulté ne
+   les fixe ; ils sont paramétrables dans `src/domain/surveillance.js`.
 
 ---
 

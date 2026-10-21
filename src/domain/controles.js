@@ -7,6 +7,7 @@ import { anomaliesEspeces } from './especes.js';
 // fonctions, et controles.js n'appelle anomaliesTgc qu'a l'execution.
 import { anomaliesTgc } from './tgc.js';
 import { anomaliesPlacements } from './placements.js';
+import { relancesRapprochements } from './surveillance.js';
 
 /**
  * Controles de conformite de la comptabilite notariale.
@@ -363,7 +364,7 @@ export function etatDeboursAReverser() {
 
 const GRAVITES = ['CRITIQUE', 'MAJEURE', 'MINEURE', 'INFORMATION'];
 
-export function anomalies() {
+export function anomalies(options = {}) {
   const liste = [];
 
   for (const d of etatComptesDebiteurs().lignes) {
@@ -428,6 +429,26 @@ export function anomalies() {
 
   // Especes : plafonds, encaisse, caisse creditrice a une date quelconque.
   liste.push(...anomaliesEspeces());
+  // Rapprochements periodiques non effectues : entre deux arretes rapproches,
+  // aucune verification externe ne couvre les fonds detenus.
+  for (const r of relancesRapprochements(options).relances) {
+    liste.push({
+      gravite: r.gravite,
+      code: 'RAPPROCHEMENT_EN_RETARD',
+      objet: `Compte ${r.compte}`,
+      message: r.message,
+    });
+  }
+
+  const caisse = un(`SELECT IFNULL(SUM(solde), 0) AS s FROM v_soldes WHERE nature = 'CAISSE'`).s;
+  if (caisse < 0) {
+    liste.push({
+      gravite: 'MAJEURE',
+      code: 'CAISSE_NEGATIVE',
+      objet: 'Caisse',
+      message: `Caisse creditrice de ${-caisse} XPF : impossible physiquement.`,
+    });
+  }
 
   const dossiersSoldes = tous(
     `SELECT * FROM v_soldes_dossiers WHERE statut = 'OUVERT' AND solde = 0

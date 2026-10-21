@@ -112,6 +112,8 @@ async function afficher(vue) {
 async function vueTableau() {
   const d = await api('/tableau-de-bord');
   const f = d.representation_fonds;
+  const r = d.rapprochements;
+  const periodesEnRetard = r.relances.reduce((n, x) => n + x.nb_periodes_manquantes, 0);
   const critiques = d.anomalies.filter((a) => a.gravite === 'CRITIQUE');
 
   $('#contenu').innerHTML = `
@@ -135,6 +137,18 @@ async function vueTableau() {
         <p>${d.dossiers.debiteurs > 0
             ? `<span class="pastille critique">${d.dossiers.debiteurs} compte(s) client débiteur(s)</span>`
             : '<span class="pastille ok">Aucun compte client débiteur</span>'}</p>
+      </div>
+      <div class="carte">
+        <div class="libelle-indicateur">Rapprochements bancaires</div>
+        <div class="indicateur ${r.conforme ? '' : 'negatif'}">${r.conforme ? '\u2713' : periodesEnRetard}</div>
+        <p>${r.conforme
+            ? 'Toutes les périodes exigibles sont rapprochées.'
+            : `${periodesEnRetard} période(s) non rapprochée(s) sur ${r.relances.length} compte(s).`}</p>
+        ${r.conforme
+          ? '<span class="pastille ok">À jour</span>'
+          : `<span class="pastille ${(r.relances[0].gravite ?? '').toLowerCase()}">
+               ${echapper(r.relances[0].compte)} — ${r.relances[0].nb_periodes_manquantes} période(s), retard ${r.relances[0].retard_jours} j
+             </span>`}
       </div>
       <div class="carte">
         <div class="libelle-indicateur">Inaltérabilité</div>
@@ -961,11 +975,65 @@ async function detailTaxe(id) {
 
 // ============================================================ rapprochement
 
+const LIBELLE_PERIODE = {
+  COUVERTE: 'rapprochée',
+  EN_COURS: 'en cours',
+  ATTENDUE: 'relevé attendu',
+  MANQUANTE: 'non rapprochée',
+};
+
+/** Frise des périodes d'un compte : une pastille par période, la plus récente à droite. */
+const frisePeriodes = (c) => `
+  <div class="frise" role="list" aria-label="Périodes de rapprochement du compte ${echapper(c.compte)}">
+    ${c.periodes.slice(-18).map((p, i) => `
+      <span role="listitem" class="periode ${p.statut.toLowerCase()}"
+            title="${echapper(p.libelle)} — arrêté au ${dateFr(p.fin)} — ${LIBELLE_PERIODE[p.statut]}${p.inacheve ? ' (ouvert, jamais clos)' : ''}">
+        ${echapper(i === 0 || p.libelle.endsWith('-01') ? p.libelle : p.libelle.slice(5))}
+      </span>`).join('')}
+  </div>`;
+
+function carteSurveillance(s) {
+  const encours = s.calendriers.filter((c) => c.periodes.length);
+  if (!encours.length) return '';
+  return `
+    <div class="carte">
+      <header>
+        <h2>Périodes à rapprocher</h2>
+        <span class="pastille ${s.conforme ? 'ok' : (s.relances[0].gravite ?? '').toLowerCase()}">
+          ${s.conforme ? 'Tous les comptes sont à jour' : `${s.relances.length} compte(s) en retard`}
+        </span>
+      </header>
+      <p class="aide">Rapprochement attendu ${s.periodicite_mois === 1 ? 'chaque mois' : `tous les ${s.periodicite_mois} mois`},
+        exigible ${s.delai_jours} jours après la fin de la période. Un arrêté en cours de mois ne couvre pas la période.</p>
+      ${encours.map((c) => `
+        <div class="suivi-compte">
+          <div class="suivi-entete">
+            <span class="compte">${echapper(c.compte)}</span>
+            <span>${echapper(c.intitule)}</span>
+            ${c.nature === 'DEPOT_FONDS_CLIENTS' ? '<span class="pastille minuscule">fonds clients</span>' : ''}
+            ${c.conforme
+              ? '<span class="pastille ok">à jour</span>'
+              : `<span class="pastille ${c.gravite.toLowerCase()}">${c.nb_periodes_manquantes} période(s) en retard</span>`}
+          </div>
+          ${frisePeriodes(c)}
+          ${c.periodes_manquantes.length ? `
+            <div class="barre-outils serree">
+              ${c.periodes_manquantes.slice(0, 6).map((p) => `
+                <button class="secondaire" data-rapprocher="${echapper(c.compte)}" data-arrete="${p.fin}">
+                  Rapprocher ${echapper(p.libelle)}${p.inacheve ? ' (reprendre)' : ''}
+                </button>`).join('')}
+            </div>` : ''}
+        </div>`).join('')}
+    </div>`;
+}
+
 async function vueRapprochement() {
   const comptes = (await api('/comptes')).filter((c) => c.rapprochable);
   const liste = await api('/rapprochements');
+  const surveillance = await api('/rapprochements/surveillance');
   $('#contenu').innerHTML = `
-    <div class="carte">
+    ${carteSurveillance(surveillance)}
+    <div class="carte" style="margin-top:1rem">
       <h2>Nouveau rapprochement</h2>
       <form id="form-rappro" class="barre-outils">
         <label>Compte <select name="compte">${comptes.map((c) => `<option value="${c.numero}">${c.numero} — ${echapper(c.intitule)}</option>`).join('')}</select></label>
@@ -994,6 +1062,18 @@ async function vueRapprochement() {
     await detailRapprochement(r.id);
   }));
   $$('[data-rappro]').forEach((b) => b.addEventListener('click', garde(() => detailRapprochement(b.dataset.rappro))));
+
+  // Une période en retard amène directement au rapprochement correspondant :
+  // soit celui qui a été ouvert et jamais clos, soit un formulaire pré-rempli.
+  $$('[data-rapprocher]').forEach((b) => b.addEventListener('click', garde(async () => {
+    const existant = liste.find((r) => r.compte === b.dataset.rapprocher && r.date_arrete === b.dataset.arrete);
+    if (existant) return detailRapprochement(existant.id);
+    const form = $('#form-rappro');
+    form.compte.value = b.dataset.rapprocher;
+    form.date_arrete.value = b.dataset.arrete;
+    form.solde_releve.focus();
+    message(`Saisir le solde du relevé au ${dateFr(b.dataset.arrete)}.`);
+  })));
 }
 
 async function detailRapprochement(id) {
@@ -1316,6 +1396,7 @@ async function vueInspection() {
   const chaine = await api('/controles/chaine');
   const audit = await api('/audit?limite=100');
   const exercices = d.exercices;
+  const sr = d.surveillance_rapprochements;
 
   $('#contenu').innerHTML = `
     <div class="carte">
@@ -1416,6 +1497,28 @@ async function vueInspection() {
     </div>
 
     <div class="carte saut-de-page" style="margin-top:1rem">
+      <h2>Continuité des rapprochements bancaires</h2>
+      <p>Un rapprochement isolé ne prouve rien : seule une série continue établit que les fonds
+        détenus ont été confrontés aux avoirs réels, période après période.</p>
+      ${sr.calendriers.filter((c) => c.periodes.length).length ? `<table>
+        <thead><tr><th>Compte</th><th>Intitulé</th><th>Dernière période couverte</th>
+          <th class="nb">Périodes manquantes</th><th>Périodes</th><th>État</th></tr></thead>
+        <tbody>${sr.calendriers.filter((c) => c.periodes.length).map((c) => `
+          <tr>
+            <td class="compte">${echapper(c.compte)}</td>
+            <td>${echapper(c.intitule)}</td>
+            <td>${c.derniere_couverture ? dateFr(c.derniere_couverture) : '<span class="vide">aucune</span>'}</td>
+            <td class="nb">${c.nb_periodes_manquantes}</td>
+            <td>${echapper(c.periodes_manquantes.map((p) => p.libelle).join(', '))}</td>
+            <td>${c.conforme
+                ? '<span class="pastille ok">à jour</span>'
+                : `<span class="pastille ${c.gravite.toLowerCase()}">${c.gravite.toLowerCase()}</span>`}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : '<p class="vide">Aucun compte rapprochable mouvementé.</p>'}
+    </div>
+
+    <div class="carte" style="margin-top:1rem">
       <h2>Anomalies relevées</h2>
       ${d.anomalies.length ? d.anomalies.map(carteAnomalie).join('')
         : '<div class="alerte information"><strong>Conforme</strong>Aucune anomalie.</div>'}

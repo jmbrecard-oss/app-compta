@@ -123,6 +123,7 @@ route('GET', '/api/tableau-de-bord', 'lire', async () => {
        WHERE nature IN ('BANQUE_OFFICE','DEPOT_FONDS_CLIENTS','CAISSE') ORDER BY numero`,
     ),
     brouillons: un(`SELECT COUNT(*) AS n FROM ecritures WHERE statut = 'BROUILLON'`).n,
+    rapprochements: Rapprochement.surveillance(),
     chaine: Ecritures.verifierChaineEcritures(),
   };
 });
@@ -211,6 +212,14 @@ route('POST', '/api/delettrage', 'valider', async ({ corps, utilisateur }) =>
 route('GET', '/api/rapprochements', 'lire', async () => Rapprochement.listerRapprochements());
 route('POST', '/api/rapprochements', 'saisir', async ({ corps, utilisateur }) =>
   Rapprochement.ouvrirRapprochement(corps, utilisateur));
+// Les routes nommees precedent la route parametree : le routeur retient la premiere correspondance.
+route('GET', '/api/rapprochements/surveillance', 'lire', async ({ query }) => Rapprochement.surveillance(query));
+route('GET', '/api/rapprochements/calendrier/:numero', 'lire', async ({ params, query }) =>
+  Rapprochement.calendrier(params.numero, {
+    ...query,
+    periodicite_mois: query.periodicite_mois ? Number(query.periodicite_mois) : undefined,
+    delai_jours: query.delai_jours ? Number(query.delai_jours) : undefined,
+  }));
 route('GET', '/api/rapprochements/:id', 'lire', async ({ params }) =>
   Rapprochement.etatRapprochement(Number(params.id)));
 route('POST', '/api/rapprochements/:id/pointer', 'saisir', async ({ params, corps, utilisateur }) =>
