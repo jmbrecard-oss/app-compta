@@ -5,7 +5,7 @@ import { join, extname, normalize } from 'node:path';
 import { ouvrirBase, un, tous, RACINE } from './db.js';
 import { initialiser } from './init.js';
 import { connecter, deconnecter, utilisateurDuJeton, exigerDroit, listerUtilisateurs, creerUtilisateur } from './auth.js';
-import { ErreurConformite, anomalies, etatRepresentationFonds } from './domain/controles.js';
+import { ErreurConformite, anomalies, etatRepresentationFonds, etatJustificationPieces } from './domain/controles.js';
 import * as Ecritures from './domain/ecritures.js';
 import * as Dossiers from './domain/dossiers.js';
 import * as Rapprochement from './domain/rapprochement.js';
@@ -209,6 +209,7 @@ route('GET', '/api/etats/inspection', 'lire', async ({ query }) => Etats.dossier
 // --------------------------------------------------------- controles et audit
 
 route('GET', '/api/controles/anomalies', 'lire', async () => anomalies());
+route('GET', '/api/controles/pieces', 'lire', async () => etatJustificationPieces());
 route('GET', '/api/controles/chaine', 'lire', async () => ({
   ecritures: Ecritures.verifierChaineEcritures(),
   audit: verifierChaineAudit(),

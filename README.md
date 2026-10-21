@@ -50,6 +50,12 @@ débours, facturation des émoluments, virement vers le compte office, restituti
 solde. Équilibre affiché en direct. Une écriture naît en brouillon ; elle n'existe
 comptablement qu'une fois comptabilisée.
 
+**Pièces justificatives.** Aucune écriture ne se comptabilise sans la référence de
+la pièce qui la justifie, datée et jamais postérieure à l'écriture. Dans les journaux
+d'achats et d'émoluments, une même référence ne peut pas être comptabilisée deux
+fois : la double imputation d'une facture est refusée. Un relevé bancaire, lui,
+justifie autant d'écritures qu'il comporte de lignes.
+
 **Comptabilisation.** À cet instant, et seulement à cet instant, l'écriture reçoit
 son numéro de séquence, passe les contrôles bloquants et entre dans la chaîne
 d'empreintes. Elle devient alors immuable : la base elle-même refuse toute
@@ -58,8 +64,8 @@ motif conservé.
 
 **Contrôles bloquants.** Équilibre, montants entiers en XPF, exercice ouvert,
 chronologie du journal, étanchéité office/clients, solde client jamais débiteur,
-représentation permanente des fonds clients. Un refus annule toute l'écriture et
-la laisse en brouillon, avec le motif exact.
+représentation permanente des fonds clients, justification par une pièce. Un refus
+annule toute l'écriture et la laisse en brouillon, avec le motif exact.
 
 **Rapprochement bancaire.** Pointage des mouvements, calcul du solde rapproché,
 clôture refusée tant qu'un écart subsiste.
@@ -68,8 +74,8 @@ clôture refusée tant qu'un écart subsiste.
 comptes clients, état de représentation des fonds. Exports FEC (18 colonnes) et CSV.
 
 **Inspection.** Un écran rassemble ce qu'un contrôle demande : volumétrie, état de
-la chaîne d'inaltérabilité, anomalies classées par gravité, exercices, piste
-d'audit nominative et horodatée.
+la chaîne d'inaltérabilité, justification des écritures par les pièces, anomalies
+classées par gravité, exercices, piste d'audit nominative et horodatée.
 
 **Clôture d'exercice.** Diagnostic préalable listant chaque obstacle, génération des
 à-nouveaux, scellement de l'exercice par une empreinte.
@@ -108,7 +114,7 @@ src/
     fec.js            export FEC et CSV
   server.js           API HTTP et service des fichiers statiques
 public/               interface (HTML/CSS/JS, sans framework)
-test/                 21 tests de conformité
+test/                 28 tests de conformité
 ```
 
 ## Exploitation

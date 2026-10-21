@@ -161,6 +161,18 @@ async function vueTableau() {
     </div>`;
 }
 
+/** Liste d'ecritures non justifiees ; rien ne s'affiche s'il n'y en a pas. */
+const tableauPieces = (titre, ecritures) => (ecritures.length ? `
+  <h3>${echapper(titre)}</h3>
+  <div class="defilant"><table>
+    <thead><tr><th>Journal</th><th>N°</th><th>Date</th><th>Pièce</th><th>Date pièce</th><th>Libellé</th></tr></thead>
+    <tbody>${ecritures.map((e) => `
+      <tr><td>${echapper(e.journal)}</td><td>${e.numero}</td><td>${dateFr(e.date_ecriture)}</td>
+        <td>${echapper(e.piece_ref).trim() || '<span class="pastille critique">absente</span>'}</td>
+        <td>${dateFr(e.date_piece)}</td><td>${echapper(e.libelle)}</td></tr>`).join('')}
+    </tbody>
+  </table></div>` : '');
+
 const carteAnomalie = (a) => `
   <div class="alerte ${a.gravite.toLowerCase()}">
     <strong>${echapper(a.gravite)} — ${echapper(a.objet)}</strong>${echapper(a.message)}
@@ -231,7 +243,8 @@ async function vueSaisie() {
             </select>
           </label>
           <label>Date <input type="date" name="date_ecriture" value="${aujourdhui()}" required></label>
-          <label>Pièce <input name="piece_ref" placeholder="n° de pièce"></label>
+          <label>Pièce * <input name="piece_ref" placeholder="n° de facture, de relevé…"></label>
+          <label>Date pièce <input type="date" name="date_piece" value="${aujourdhui()}"></label>
           <label style="flex:1">Libellé <input name="libelle" required placeholder="Objet de l'écriture"></label>
         </div>
 
@@ -252,6 +265,8 @@ async function vueSaisie() {
           <button type="submit" class="secondaire">Enregistrer en brouillon</button>
           <button type="button" id="enregistrer-valider">Comptabiliser</button>
         </div>
+        <p class="note-saisie">* La référence de la pièce justificative est exigée pour comptabiliser :
+          une écriture sans pièce n'est pas vérifiable. Un brouillon peut être enregistré sans elle.</p>
       </form>
     </div>
 
@@ -342,6 +357,12 @@ async function soumettre(valider) {
   const donnees = Object.fromEntries(new FormData(form));
   const lignes = lireLignes();
   if (lignes.length < 2) throw new Error('Une écriture comporte au moins deux lignes imputées.');
+  if (valider && !String(donnees.piece_ref ?? '').trim()) {
+    throw new Error('La référence de la pièce justificative est obligatoire pour comptabiliser.');
+  }
+  if (valider && donnees.date_piece > donnees.date_ecriture) {
+    throw new Error("La pièce ne peut pas être datée après l'écriture qu'elle justifie.");
+  }
   for (const l of lignes) if (!l.libelle) l.libelle = donnees.libelle;
 
   const ecriture = await api('/ecritures', { methode: 'POST', corps: { ...donnees, lignes } });
@@ -803,6 +824,26 @@ async function vueInspection() {
           ? `${chaine.audit.evenements} événements tracés, chaîne intègre.`
           : `Rupture à l'événement ${chaine.audit.rupture_id} : ${echapper(chaine.audit.motif)}`}
       </div>
+    </div>
+
+    <div class="carte" style="margin-top:1rem">
+      <h2>Justification des écritures par les pièces</h2>
+      <div class="alerte ${d.justification_pieces.conforme ? 'information' : 'majeure'}">
+        <strong>Pièces justificatives</strong>
+        ${d.justification_pieces.justifiees} écriture(s) justifiée(s) sur
+        ${d.justification_pieces.ecritures_comptabilisees} comptabilisée(s).
+      </div>
+      ${tableauPieces('Écritures sans référence de pièce', d.justification_pieces.sans_piece)}
+      ${tableauPieces('Pièces datées après l\'écriture', d.justification_pieces.piece_posterieure)}
+      ${d.justification_pieces.doublons.length ? `
+        <h3>Références comptabilisées plusieurs fois</h3>
+        <table>
+          <thead><tr><th>Journal</th><th>Référence</th><th class="nb">Occurrences</th><th>Écritures</th></tr></thead>
+          <tbody>${d.justification_pieces.doublons.map((x) => `
+            <tr><td>${echapper(x.journal)}</td><td>${echapper(x.reference)}</td>
+              <td class="nb">${x.occurrences}</td><td>${echapper(x.numeros)}</td></tr>`).join('')}
+          </tbody>
+        </table>` : ''}
     </div>
 
     <div class="carte" style="margin-top:1rem">

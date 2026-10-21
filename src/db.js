@@ -15,7 +15,25 @@ export function ouvrirBase(chemin = process.env.COMPTA_DB ?? join(RACINE, 'data'
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
   db.exec(readFileSync(join(ici, 'schema.sql'), 'utf8'));
+  migrer(db);
   return db;
+}
+
+/**
+ * Mises a niveau d'une base existante.
+ *
+ * Le schema est rejoue a chaque ouverture, mais `CREATE TABLE IF NOT EXISTS`
+ * n'ajoute pas les colonnes apparues depuis. Les declencheurs, eux, sont
+ * supprimes puis recrees par le schema : ils sont toujours a jour.
+ */
+function migrer(db) {
+  const colonnes = db.prepare('PRAGMA table_info(journaux)').all().map((c) => c.name);
+  if (!colonnes.includes('piece_unique')) {
+    db.exec('ALTER TABLE journaux ADD COLUMN piece_unique INTEGER NOT NULL DEFAULT 0');
+    // Un numero de facture identifie une piece unique ; une reference de
+    // releve ou de feuille de caisse en justifie plusieurs.
+    db.exec(`UPDATE journaux SET piece_unique = 1 WHERE type IN ('ACHATS','VENTES')`);
+  }
 }
 
 export function base() {

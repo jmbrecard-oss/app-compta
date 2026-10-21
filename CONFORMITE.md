@@ -122,7 +122,29 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 | Pas de rétro-datation | `controleChronologie` refuse une écriture antérieure à la dernière comptabilisée dans le même journal |
 | Exercice clos verrouillé | `controleExercice` refuse toute écriture datée dans un exercice clos |
 
-### 4. Tenue de la comptabilité
+### 4. Justification des écritures par les pièces
+
+Une comptabilité n'est contrôlable que si l'on peut remonter de chaque écriture à la pièce qui
+la justifie. L'article 2 de l'arrêté de 2006 fait porter l'examen du commissaire aux comptes sur
+**tous les modules générant des écritures comptables** : une écriture sans pièce échappe par
+construction à cet examen.
+
+| Règle | Mise en œuvre | Preuve |
+|---|---|---|
+| Toute écriture comptabilisée porte la référence de sa pièce justificative | `controlePieceJustificative` refuse la comptabilisation si `piece_ref` est vide ou réduite à des espaces. Le brouillon, lui, reste admis sans pièce : la saisie peut être incomplète, la comptabilisation non | test « une écriture sans référence de pièce ne peut pas être comptabilisée » |
+| La pièce est datée, et jamais postérieure à l'écriture | Date au format `AAAA-MM-JJ` exigée ; `date_piece > date_ecriture` refusé — une écriture ne peut pas être justifiée par une pièce qui n'existe pas encore à sa date | tests « une pièce datée postérieurement à l'écriture est refusée » et « une date de pièce hors format est refusée » |
+| Pas de double comptabilisation d'une même pièce | Dans les journaux où une référence désigne une pièce et une seule (`journaux.piece_unique` : achats et émoluments), la ressaisie de la même référence dans le même exercice est refusée. La comparaison ignore la casse et les espaces surnuméraires | test « la même facture ne peut pas être comptabilisée deux fois dans un journal de facturation » |
+| Une référence de relevé justifie plusieurs écritures | `piece_unique = 0` pour les journaux de banque, de caisse, d'opérations diverses et d'à-nouveaux : un relevé couvre légitimement de nombreuses lignes | test « une même référence de relevé justifie plusieurs écritures de banque » |
+| La contre-passation reprend la pièce d'origine | Le lien `contrepassation_de` est posé dès le brouillon miroir : l'extourne est exemptée du contrôle de doublon, et la pièce extournée peut ensuite être réimputée sous sa référence d'origine | test « la contre-passation reprend la pièce d'origine sans être tenue pour un doublon » |
+| Les écritures héritées non justifiées sont recensées, pas dissimulées | `etatJustificationPieces` : écritures comptabilisées sans pièce, pièces postérieures, références comptabilisées plusieurs fois, brouillons sans pièce. Remonté dans les anomalies (gravité **majeure**) et dans le dossier d'inspection | test « l'état de justification des pièces recense les écritures non justifiées » |
+
+Le contrôle bloquant ne vaut que pour l'avenir : une écriture comptabilisée est inaltérable, une
+écriture héritée sans pièce ne peut donc plus être corrigée autrement que par contre-passation.
+C'est pourquoi l'absence de pièce sur l'existant est **signalée** et non érigée en obstacle de
+clôture : un obstacle que l'office ne pourrait pas lever n'aurait pour seul effet que de
+généraliser la clôture forcée.
+
+### 5. Tenue de la comptabilité
 
 - Partie double contrôlée à la comptabilisation ; écriture de montant nul refusée.
 - Montants en **entiers de XPF** : le franc Pacifique n'a pas de subdivision. Tout montant
@@ -133,7 +155,7 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 - Lettrage refusé sur un lot déséquilibré.
 - Compte d'attente 471000 signalé dès qu'il n'est pas soldé, bloquant à la clôture.
 
-### 5. Contrôles périodiques
+### 6. Contrôles périodiques
 
 - **Rapprochement bancaire** : clôture refusée tant qu'un écart subsiste entre solde
   rapproché et solde du relevé.
@@ -143,12 +165,13 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
   empreinte.
 - **Rôles** : `INSPECTEUR` dispose d'un accès en lecture intégrale et d'aucun droit d'écriture.
 
-### 6. Restitution des données
+### 7. Restitution des données
 
 - **Export FEC** : 18 colonnes, séparateur tabulation, dates AAAAMMJJ. Brouillons exclus par
   construction. Le dossier tient lieu de compte auxiliaire pour les comptes clients.
 - **Dossier d'inspection** : balance, état des comptes clients, représentation des fonds,
-  anomalies, rapprochements, volumétrie, état de la chaîne, piste d'audit — sur un écran unique.
+  justification des écritures par les pièces, anomalies, rapprochements, volumétrie, état de la
+  chaîne, piste d'audit — sur un écran unique.
 - Exports CSV de la balance et de l'état des comptes clients.
 
 ---
@@ -176,6 +199,21 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 4. **Durée de conservation** et modalités de sauvegarde de la base.
 5. **Rapprochement obligatoire** : la clôture exige aujourd'hui un rapprochement clos à la
    date de fin d'exercice pour chaque compte rapprochable.
+6. **Unicité des références de pièce** : elle est exigée dans les journaux d'achats et
+   d'émoluments, pas dans ceux de banque, de caisse ni d'opérations diverses
+   (`journaux.piece_unique`). Cette répartition décrit une façon de référencer les pièces dans
+   l'office, pas une règle de droit : à confirmer, journal par journal.
+
+### Réserves techniques connues
+
+- **`date_piece` n'entre pas dans l'empreinte des écritures.** Le champ est verrouillé au niveau
+  de la base (déclencheur `trg_ecriture_maj_interdite`), au même titre que la date d'écriture ou
+  le libellé, mais il ne figure pas dans le calcul de `empreinteEcriture`. L'y ajouter
+  invaliderait la chaîne de toutes les écritures déjà scellées : l'opération est réservée à une
+  rupture de version assumée, avec rescellement documenté. La référence de pièce, elle, est bien
+  scellée dans la chaîne.
+- Les déclencheurs d'inaltérabilité sont désormais supprimés puis recréés à chaque ouverture de
+  la base : une base existante reçoit ainsi les verrous ajoutés par les versions ultérieures.
 
 ---
 

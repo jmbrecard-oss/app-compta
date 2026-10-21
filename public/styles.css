@@ -211,5 +211,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 details.bloc { border: 1px solid var(--bord); border-radius: var(--radius); padding: .6rem .9rem; background: var(--surface); margin-bottom: .6rem; }
 details.bloc summary { cursor: pointer; font-weight: 600; }
 
+.note-saisie { color: var(--texte-doux); font-size: .8rem; margin: .4rem 0 0; }
+
 .vide { color: var(--texte-doux); font-style: italic; padding: 1rem 0; }
 .empreinte { font-family: var(--mono); font-size: .72rem; color: var(--texte-doux); word-break: break-all; }

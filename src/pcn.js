@@ -118,14 +118,28 @@ export const PLAN_COMPTABLE = [
   C('791000', 'Transferts de charges', { sens: 'CREDIT' }),
 ];
 
+/**
+ * Journaux.
+ *
+ * piece_unique = 1 : dans ce journal, une reference de piece identifie une
+ * piece et une seule ; la ressaisir serait une double comptabilisation. C'est
+ * le cas d'un numero de facture (achats, emoluments).
+ * piece_unique = 0 : une meme reference couvre legitimement plusieurs
+ * ecritures — un releve bancaire, une feuille de caisse, un acte unique
+ * donnant lieu a plusieurs operations diverses.
+ *
+ * Cette repartition est un parametre d'exploitation, a confirmer avec la
+ * Chambre : elle decrit la facon de referencer les pieces dans l'office, pas
+ * une regle de droit.
+ */
 export const JOURNAUX = [
-  { code: 'AN', libelle: 'A nouveaux', type: 'ANOUVEAU', compte_contrepartie: null },
-  { code: 'BQO', libelle: 'Banque - compte office', type: 'BANQUE', compte_contrepartie: '512100' },
-  { code: 'BQC', libelle: 'Banque - depot des fonds clients', type: 'BANQUE', compte_contrepartie: '512500' },
-  { code: 'CAI', libelle: 'Caisse', type: 'CAISSE', compte_contrepartie: '531000' },
-  { code: 'ACH', libelle: 'Achats et frais generaux', type: 'ACHATS', compte_contrepartie: '401000' },
-  { code: 'EMO', libelle: 'Emoluments et honoraires', type: 'VENTES', compte_contrepartie: null },
-  { code: 'OD', libelle: 'Operations diverses', type: 'OD', compte_contrepartie: null },
+  { code: 'AN', libelle: 'A nouveaux', type: 'ANOUVEAU', compte_contrepartie: null, piece_unique: 0 },
+  { code: 'BQO', libelle: 'Banque - compte office', type: 'BANQUE', compte_contrepartie: '512100', piece_unique: 0 },
+  { code: 'BQC', libelle: 'Banque - depot des fonds clients', type: 'BANQUE', compte_contrepartie: '512500', piece_unique: 0 },
+  { code: 'CAI', libelle: 'Caisse', type: 'CAISSE', compte_contrepartie: '531000', piece_unique: 0 },
+  { code: 'ACH', libelle: 'Achats et frais generaux', type: 'ACHATS', compte_contrepartie: '401000', piece_unique: 1 },
+  { code: 'EMO', libelle: 'Emoluments et honoraires', type: 'VENTES', compte_contrepartie: null, piece_unique: 1 },
+  { code: 'OD', libelle: 'Operations diverses', type: 'OD', compte_contrepartie: null, piece_unique: 0 },
 ];
 
 /** Prefixe des comptes clients individualises : 411 + 5 chiffres. */

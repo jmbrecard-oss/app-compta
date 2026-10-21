@@ -127,6 +127,86 @@ export function controleChronologie(journal, exerciceId, dateEcriture) {
   }
 }
 
+const EST_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Normalise une reference de piece : espaces interieurs compresses, bornes
+ * elaguees. Deux saisies de la meme reference designent ainsi la meme piece.
+ */
+export function normaliserReferencePiece(ref) {
+  return String(ref ?? '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Justification de l'ecriture par une piece.
+ *
+ * Une comptabilite n'est controlable que si l'on peut remonter de chaque
+ * ecriture a la piece qui la justifie, et inversement. L'arrete du 27 janvier
+ * 2006 fait porter l'examen du commissaire aux comptes sur tous les modules
+ * generant des ecritures : une ecriture sans piece n'est pas verifiable.
+ *
+ * Trois exigences, toutes bloquantes a la comptabilisation :
+ *   1. une reference de piece non vide ;
+ *   2. une date de piece valide, jamais posterieure a la date d'ecriture —
+ *      une ecriture ne peut pas etre justifiee par une piece qui n'existe pas
+ *      encore a sa date ;
+ *   3. dans les journaux ou une reference designe une piece et une seule
+ *      (facturation), l'absence de double comptabilisation.
+ *
+ * La contre-passation est exemptee du point 3 : elle reprend deliberement la
+ * reference de l'ecriture qu'elle extourne.
+ */
+export function controlePieceJustificative(ecriture, journal) {
+  const reference = normaliserReferencePiece(ecriture.piece_ref);
+  if (!reference) {
+    throw new ErreurConformite(
+      'PIECE_NON_REFERENCEE',
+      `Ecriture du ${ecriture.date_ecriture} au journal ${ecriture.journal} : la reference de la piece `
+      + `justificative est obligatoire. Une ecriture sans piece n est pas verifiable.`,
+      { journal: ecriture.journal, date: ecriture.date_ecriture },
+    );
+  }
+
+  const datePiece = String(ecriture.date_piece ?? '').trim();
+  if (!EST_DATE.test(datePiece)) {
+    throw new ErreurConformite(
+      'DATE_PIECE_INVALIDE',
+      `Piece ${reference} : date attendue au format AAAA-MM-JJ.`,
+      { piece_ref: reference, date_piece: ecriture.date_piece },
+    );
+  }
+  if (datePiece > ecriture.date_ecriture) {
+    throw new ErreurConformite(
+      'PIECE_POSTERIEURE',
+      `Piece ${reference} datee du ${datePiece}, posterieure a l ecriture du ${ecriture.date_ecriture} : `
+      + `une ecriture ne peut pas etre justifiee par une piece qui n existe pas encore.`,
+      { piece_ref: reference, date_piece: datePiece, date_ecriture: ecriture.date_ecriture },
+    );
+  }
+
+  if (journal?.piece_unique && !ecriture.contrepassation_de) {
+    const doublon = un(
+      `SELECT id, journal, numero, date_ecriture, libelle FROM ecritures
+       WHERE exercice_id = $ex AND journal = $j AND id <> $id
+         AND statut = 'VALIDEE' AND contrepassation_de IS NULL
+         AND UPPER(piece_ref) = UPPER($ref)
+       LIMIT 1`,
+      { ex: ecriture.exercice_id, j: ecriture.journal, id: ecriture.id, ref: reference },
+    );
+    if (doublon) {
+      throw new ErreurConformite(
+        'PIECE_DEJA_COMPTABILISEE',
+        `La piece ${reference} justifie deja l ecriture ${doublon.journal}-${doublon.numero} `
+        + `du ${doublon.date_ecriture} (${doublon.libelle}) : la comptabiliser une seconde fois `
+        + `serait une double imputation.`,
+        { piece_ref: reference, ecriture_existante: doublon },
+      );
+    }
+  }
+
+  return reference;
+}
+
 /**
  * Interdiction du solde debiteur sur un compte client.
  *
@@ -223,6 +303,61 @@ export function controleEtancheite(lignes) {
 // Controles signales : tableau de bord et dossier d'inspection
 // --------------------------------------------------------------------------
 
+/**
+ * Etat de justification des ecritures par les pieces.
+ *
+ * Le controle bloquant ne vaut que pour l'avenir : une ecriture comptabilisee
+ * est inalterable, une ecriture heritee sans piece ne peut donc plus etre
+ * corrigee autrement que par contre-passation. Cet etat les recense pour que
+ * l'office les regularise et que l'inspection sache ou elles sont.
+ */
+export function etatJustificationPieces() {
+  const champs = 'id, journal, numero, date_ecriture, date_piece, piece_ref, libelle, statut';
+
+  const sansPiece = tous(
+    `SELECT ${champs} FROM ecritures
+     WHERE statut <> 'BROUILLON' AND TRIM(IFNULL(piece_ref, '')) = ''
+     ORDER BY date_ecriture, id`,
+  );
+  const piecePosterieure = tous(
+    `SELECT ${champs} FROM ecritures
+     WHERE statut <> 'BROUILLON' AND date_piece IS NOT NULL AND date_piece > date_ecriture
+     ORDER BY date_ecriture, id`,
+  );
+  const brouillonsSansPiece = tous(
+    `SELECT ${champs} FROM ecritures
+     WHERE statut = 'BROUILLON' AND TRIM(IFNULL(piece_ref, '')) = ''
+     ORDER BY date_ecriture, id`,
+  );
+  const doublons = tous(
+    `SELECT e.journal, e.exercice_id, UPPER(e.piece_ref) AS reference,
+            COUNT(*) AS occurrences, GROUP_CONCAT(e.numero) AS numeros
+     FROM ecritures e JOIN journaux j ON j.code = e.journal
+     WHERE e.statut = 'VALIDEE' AND e.contrepassation_de IS NULL
+       AND j.piece_unique = 1 AND TRIM(IFNULL(e.piece_ref, '')) <> ''
+     GROUP BY e.exercice_id, e.journal, UPPER(e.piece_ref)
+     HAVING occurrences > 1
+     ORDER BY e.journal, reference`,
+  );
+
+  const total = un(`SELECT COUNT(*) AS n FROM ecritures WHERE statut <> 'BROUILLON'`).n;
+  return {
+    arrete_le: new Date().toISOString().slice(0, 10),
+    ecritures_comptabilisees: total,
+    justifiees: total - sansPiece.length,
+    sans_piece: sansPiece,
+    piece_posterieure: piecePosterieure,
+    doublons,
+    brouillons_sans_piece: brouillonsSansPiece,
+    conforme: sansPiece.length === 0 && piecePosterieure.length === 0 && doublons.length === 0,
+  };
+}
+
+/** Quelques ecritures nommees, pour situer une anomalie sans la deverser. */
+const extrait = (ecritures, combien = 5) =>
+  ecritures.slice(0, combien).map((e) => `${e.journal}-${e.numero}`).join(', ')
+  + (ecritures.length > combien ? ', ...' : '');
+
 export function anomalies() {
   const liste = [];
 
@@ -251,6 +386,46 @@ export function anomalies() {
       code: 'COMPTE_ATTENTE_NON_SOLDE',
       objet: `Compte ${c.numero}`,
       message: `Compte d attente non solde : ${c.solde} XPF. A imputer avant la cloture.`,
+    });
+  }
+
+  // Les ecritures non justifiees sont regroupees en une anomalie : le detail
+  // est dans l'etat de justification, repris par le dossier d'inspection.
+  const pieces = etatJustificationPieces();
+  if (pieces.sans_piece.length) {
+    liste.push({
+      gravite: 'MAJEURE',
+      code: 'ECRITURE_NON_JUSTIFIEE',
+      objet: 'Pieces justificatives',
+      message: `${pieces.sans_piece.length} ecriture(s) comptabilisee(s) sans reference de piece `
+        + `(${extrait(pieces.sans_piece)}) : a justifier ou a contre-passer.`,
+    });
+  }
+  if (pieces.doublons.length) {
+    liste.push({
+      gravite: 'MAJEURE',
+      code: 'PIECE_COMPTABILISEE_PLUSIEURS_FOIS',
+      objet: 'Pieces justificatives',
+      message: `${pieces.doublons.length} reference(s) de piece comptabilisee(s) plusieurs fois `
+        + `dans un journal de facturation : double imputation probable.`,
+    });
+  }
+  if (pieces.piece_posterieure.length) {
+    liste.push({
+      gravite: 'MAJEURE',
+      code: 'PIECE_POSTERIEURE',
+      objet: 'Pieces justificatives',
+      message: `${pieces.piece_posterieure.length} ecriture(s) justifiee(s) par une piece posterieure `
+        + `(${extrait(pieces.piece_posterieure)}).`,
+    });
+  }
+  if (pieces.brouillons_sans_piece.length) {
+    liste.push({
+      gravite: 'MINEURE',
+      code: 'BROUILLONS_SANS_PIECE',
+      objet: 'Saisie',
+      message: `${pieces.brouillons_sans_piece.length} brouillon(s) sans reference de piece : `
+        + `la comptabilisation sera refusee.`,
     });
   }
 
