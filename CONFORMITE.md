@@ -111,16 +111,33 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 
 ### 3. Inaltérabilité et piste d'audit
 
-| Règle | Mise en œuvre |
-|---|---|
-| Écriture comptabilisée non modifiable ni supprimable | Déclencheurs SQLite `trg_ecriture_maj_interdite`, `trg_ecriture_suppr_interdite` et équivalents sur les lignes. Le verrou est **dans la base** : il résiste à un accès direct par un outil tiers |
-| Correction par contre-passation seulement | `contrepasser` génère l'écriture miroir, exige un motif écrit, conserve le lien entre les deux |
-| Chaînage cryptographique | Empreinte SHA-256 de chaque écriture, calculée sur son contenu **et** sur l'empreinte précédente. Toute altération ancienne casse la chaîne de toutes les suivantes |
-| Vérification à la demande | `verifierChaineEcritures()` recalcule la chaîne ; exposé dans l'écran Inspection, contrôlé avant toute clôture |
-| Journal d'audit en ajout seul | Table `audit` chaînée, protégée par déclencheurs. Chaque opération tracée nominativement et horodatée |
-| Numérotation chronologique continue | Numéro attribué **à la comptabilisation**, pas à la saisie : séquence continue par journal et exercice, sans trou. Un brouillon abandonné ne consomme aucun numéro |
-| Pas de rétro-datation | `controleChronologie` refuse une écriture antérieure à la dernière comptabilisée dans le même journal |
-| Exercice clos verrouillé | `controleExercice` refuse toute écriture datée dans un exercice clos |
+| Règle | Mise en œuvre | Preuve |
+|---|---|---|
+| Écriture comptabilisée non modifiable ni supprimable | Déclencheurs SQLite `trg_ecriture_maj_interdite`, `trg_ecriture_suppr_interdite` et équivalents sur les lignes. Le verrou est **dans la base** : il résiste à un accès direct par un outil tiers, dans les limites rappelées plus bas | test « une écriture comptabilisée ne peut être ni modifiée ni supprimée » |
+| Aucune ligne ajoutée après coup | `trg_ligne_ajout_interdit` : la modification et la suppression des lignes étaient verrouillées, l'**ajout** ne l'était pas — une ligne injectée déséquilibrait l'écriture et devenait elle-même insupprimable | test « une ligne ne peut pas être ajoutée à une écriture comptabilisée » |
+| **Une écriture comptabilisée ne quitte jamais les livres** | `trg_ecriture_statut_fige` : le retour `VALIDEE → BROUILLON` est refusé par la base. Seule subsiste la transition `VALIDEE → CONTREPASSEE`, qui laisse l'écriture dans les livres | tests « une écriture comptabilisée ne peut pas revenir à l'état de brouillon » et « la contre-passation reste possible » |
+| Scellement non détachable | `trg_ecriture_chainage_fige` : `rang_chaine`, `hash_precedent`, `valide_le` et `valide_par` sont figés. Détacher une écriture de la chaîne la soustrairait à la vérification tout en la laissant en balance | test « le chaînage d'une écriture comptabilisée est figé » |
+| Correction par contre-passation seulement | `contrepasser` génère l'écriture miroir, exige un motif écrit, conserve le lien entre les deux | test « la correction passe par une contre-passation tracée » |
+| Chaînage cryptographique | Empreinte SHA-256 de chaque écriture, calculée sur son contenu **et** sur l'empreinte précédente. Toute altération ancienne casse la chaîne de toutes les suivantes | test « une altération directe en base est détectée par la chaîne » |
+| Vérification à la demande | `verifierChaineEcritures()` recalcule la chaîne ; exposé dans l'écran Inspection, contrôlé avant toute clôture | test « la chaîne d'inaltérabilité se vérifie de bout en bout » |
+| Journal d'audit en ajout seul | Table `audit` chaînée, protégée par déclencheurs. Chaque opération tracée nominativement et horodatée | test « la chaîne d'inaltérabilité se vérifie de bout en bout », qui couvre aussi `verifierChaineAudit()` |
+| Numérotation chronologique continue | Numéro attribué **à la comptabilisation**, pas à la saisie : séquence continue par journal et exercice, sans trou. Un brouillon abandonné ne consomme aucun numéro. `controleSequenceJournal` refuse de comptabiliser par-dessus un trou : la discontinuité ne peut pas être figée | tests « la numérotation des journaux est continue » et « la comptabilisation est refusée sur un journal dont la séquence est interrompue » |
+| Continuité prouvée, journal par journal | `etatContinuiteLivres()` énumère la série de chaque journal et de chaque exercice, et désigne les numéros manquants. Un brouillon portant un numéro définitif est la signature d'une décomptabilisation | test « une écriture décomptabilisée par accès direct est détectée » |
+| Concordance des restitutions | Les totaux du livre-journal, du grand livre et de la balance doivent coïncider. Tout écart désigne des mouvements absents d'un état — ainsi des lignes imputées sur un compte collectif, que la balance exclut par construction | tests « les livres d'une comptabilité saine sont continus et concordants » et « une ligne imputée sur un compte collectif échappe à la balance » |
+| Pas de rétro-datation | `controleChronologie` refuse une écriture antérieure à la dernière comptabilisée dans le même journal | test « une écriture antérieure à la dernière comptabilisée est refusée » |
+| Exercice clos verrouillé | `controleExercice` refuse toute écriture datée dans un exercice clos, à la saisie comme à la comptabilisation | test « un exercice clos scelle ses livres : plus aucune écriture n'y entre » |
+
+**Scellement et présence sont deux choses distinctes.** Le chaînage prouve qu'une écriture n'a pas
+été *altérée* ; il ne prouve pas qu'elle est toujours *là*. L'empreinte ne porte pas sur le statut :
+une écriture ramenée à l'état de brouillon par un accès direct à la base quitte la balance, le
+grand livre, le journal et le FEC en laissant son numéro inoccupé — et la vérification de la chaîne
+continue de répondre « intègre ». La disparition est de surcroît équilibrée, donc muette : la
+balance reste équilibrée, à un total plus faible. D'où les deux remparts ci-dessus : les
+déclencheurs interdisent la manœuvre, et l'état de continuité la détecte si elle a déjà eu lieu —
+sur une base antérieure à la pose des verrous, par exemple. Le test
+« une écriture décomptabilisée par accès direct est détectée » vérifie les deux à la fois : que
+`verifierChaineEcritures()` déclare la chaîne intacte, et que l'état de continuité, lui, nomme
+l'écriture manquante.
 
 ### 4. Tenue de la comptabilité
 
@@ -138,9 +155,10 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 - **Rapprochement bancaire** : clôture refusée tant qu'un écart subsiste entre solde
   rapproché et solde du relevé.
 - **Clôture d'exercice** : `controlePreCloture` énumère les obstacles — brouillons, comptes
-  d'attente non soldés, dossiers débiteurs, fonds non représentés, chaîne altérée,
-  rapprochement manquant. La clôture génère les à-nouveaux et scelle l'exercice par une
-  empreinte.
+  d'attente non soldés, dossiers débiteurs, fonds non représentés, chaîne altérée, **livres
+  discontinus**, rapprochement manquant. La clôture génère les à-nouveaux et scelle l'exercice par
+  une empreinte. On ne clôt pas un exercice dont les livres ne sont pas complets : test « la
+  clôture est refusée tant que les livres ne sont pas continus ».
 - **Rôles** : `INSPECTEUR` dispose d'un accès en lecture intégrale et d'aucun droit d'écriture.
 
 ### 6. Restitution des données
@@ -148,7 +166,12 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 - **Export FEC** : 18 colonnes, séparateur tabulation, dates AAAAMMJJ. Brouillons exclus par
   construction. Le dossier tient lieu de compte auxiliaire pour les comptes clients.
 - **Dossier d'inspection** : balance, état des comptes clients, représentation des fonds,
-  anomalies, rapprochements, volumétrie, état de la chaîne, piste d'audit — sur un écran unique.
+  anomalies, rapprochements, volumétrie, état de la chaîne, **continuité et concordance des
+  livres**, piste d'audit — sur un écran unique.
+- **État de continuité** : `GET /api/controles/continuite` produit, pour chaque journal et chaque
+  exercice, le premier et le dernier numéro, le nombre d'écritures comptabilisées et les numéros
+  manquants, ainsi que les trois totaux à rapprocher. C'est la pièce qui répond à la question
+  « prouvez-moi qu'aucune écriture n'a disparu ».
 - Exports CSV de la balance et de l'état des comptes clients.
 
 ---
@@ -165,6 +188,22 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 - Gestion des actes et répertoire.
 - Archivage à valeur probante externalisé, sauvegarde hors site.
 - Signature électronique et téléprocédures.
+
+### Limites des verrous d'inaltérabilité
+
+- **Un verrou de base se retire.** Les déclencheurs sont la meilleure protection disponible dans un
+  fichier SQLite, mais un outil tiers disposant du fichier peut les supprimer (`DROP TRIGGER`) avant
+  d'altérer les données — c'est d'ailleurs ainsi que les tests simulent une falsification. Restent
+  alors deux témoins : la chaîne d'empreintes, qui détecte toute altération de contenu, et l'état de
+  continuité, qui détecte toute écriture retirée des livres. Ils doivent donc être vérifiés à chaque
+  clôture et présentés à chaque inspection, ce que fait l'écran Inspection. La protection du fichier
+  lui-même — droits système, chiffrement du poste, sauvegarde hors site — relève de l'exploitation,
+  pas du logiciel.
+- **Une base déjà corrompue n'est pas réparée par l'application.** L'état de continuité nomme
+  l'écriture manquante ou la ligne injectée ; il ne les rétablit pas. Sur une base manipulée avant la
+  pose de ces verrous, la remise en état suppose une intervention hors application, à documenter et à
+  présenter au contrôle. L'application refuse en revanche de comptabiliser et de clôturer par-dessus :
+  la discontinuité ne peut plus être figée ni masquée par la suite.
 
 ### Points à arbitrer avec la Chambre
 
