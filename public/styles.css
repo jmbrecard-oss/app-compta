@@ -404,3 +404,4 @@ tr.ligne-critique:hover > td { background: var(--critique-fond); }
 .periode.couverte { background: var(--ok-fond); color: var(--ok); border-color: var(--ok); }
 .periode.manquante { background: var(--critique-fond); color: var(--critique); border-color: var(--critique); font-weight: 600; }
 .periode.en_cours { background: var(--majeure-fond); color: var(--majeure); border-color: var(--majeure); }
+code { font-family: var(--mono); font-size: .78rem; background: var(--surface-2); border: 1px solid var(--bord); border-radius: 4px; padding: .1rem .35rem; word-break: break-all; }

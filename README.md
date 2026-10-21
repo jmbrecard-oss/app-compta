@@ -116,6 +116,8 @@ Tous les états s'impriment : en-têtes de tableaux répétés sur chaque page, 
 colonne tronquée, identité de l'office en tête du document.
 comptes clients, état de représentation des fonds, état des placements rubriqués.
 Exports FEC (18 colonnes) et CSV.
+comptes clients, état de représentation des fonds. Exports FEC (18 colonnes), archive
+scellée et CSV.
 
 **Inspection.** Un écran rassemble ce qu'un contrôle demande : volumétrie, état de
 la chaîne d'inaltérabilité, mouvements d'espèces, anomalies classées par gravité,
@@ -125,6 +127,22 @@ par gravité, exercices, piste d'audit nominative et horodatée.
 
 **Clôture d'exercice.** Diagnostic préalable listant chaque obstacle — dont chaque
 période d'un compte rapprochable restée sans rapprochement clos —, génération des
+**Archive scellée.** La chaîne complète des écritures comptabilisées s'exporte en un
+document unique, scellé par une empreinte, relisible sans l'application. Un utilitaire
+séparé le vérifie — il n'ouvre pas la base et ne connaît que le fichier reçu :
+
+```bash
+node src/verifier-archive.js 1234567-ARCHIVE-20261020.json --racine <empreinte déposée>
+```
+
+Il rend un rapport contrôle par contrôle et un code de sortie 0 ou 1. Sans `--racine`,
+il établit la cohérence interne de l'archive ; avec, il établit qu'il s'agit bien de
+l'archive arrêtée par l'office. La racine — empreinte de la dernière écriture, qui résume
+toutes les précédentes — doit être conservée **hors** de l'archive : c'est elle, et elle
+seule, qui rend une falsification détectable. Voir
+[CONFORMITE.md](CONFORMITE.md), Partie II § 7.
+
+**Clôture d'exercice.** Diagnostic préalable listant chaque obstacle, génération des
 à-nouveaux, scellement de l'exercice par une empreinte.
 
 ## Rôles
@@ -171,12 +189,16 @@ src/
   reports/
     etats.js          balance, grand livre, résultat, comptes clients, inspection
     fec.js            export FEC et CSV
+    archive.js        édition de l'archive scellée
+    verification-archive.js  vérification d'une archive, sans accès à la base
+  verifier-archive.js utilitaire de vérification indépendant (ligne de commande)
   server.js           API HTTP et service des fichiers statiques
 public/               interface (HTML/CSS/JS, sans framework)
 test/                 tests de conformité
 test/                 51 tests de conformité
 test/                 35 tests de conformité
 test/                 32 tests de conformité
+test/                 34 tests de conformité
 ```
 
 ## Exploitation
@@ -212,5 +234,7 @@ ils ne disent pas le droit. Voir la section correspondante de
 des émoluments, la télédéclaration et la liasse de résultat, la paie, la gestion des
 actes et l'archivage à valeur probante. Les paramètres de TGC livrés n'ont pas été
 relevés sur le texte en vigueur et doivent l'être avant tout usage. Voir la section correspondante de
+des émoluments, les déclarations fiscales, la paie, la gestion des actes, ni
+l'horodatage qualifié et la sauvegarde hors site de l'archive. Voir la section correspondante de
 [CONFORMITE.md](CONFORMITE.md), ainsi que les points à arbitrer avec la Chambre
 avant toute mise en production.

@@ -12,6 +12,7 @@
     "init": "node src/init.js",
     "test": "node --test \"test/**/*.test.js\"",
     "demo": "COMPTA_DB=data/demo.sqlite node src/demo.js",
-    "demo:start": "COMPTA_DB=data/demo.sqlite node src/server.js"
+    "demo:start": "COMPTA_DB=data/demo.sqlite node src/server.js",
+    "verifier-archive": "node src/verifier-archive.js"
   }
 }

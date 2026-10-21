@@ -1394,6 +1394,7 @@ async function vueInspection() {
   const d = await api('/etats/inspection');
   const esp = d.registre_especes;
   const chaine = await api('/controles/chaine');
+  const archive = await api('/controles/archive');
   const audit = await api('/audit?limite=100');
   const exercices = d.exercices;
   const sr = d.surveillance_rapprochements;
@@ -1516,6 +1517,32 @@ async function vueInspection() {
           </tr>`).join('')}
         </tbody>
       </table>` : '<p class="vide">Aucun compte rapprochable mouvementé.</p>'}
+      <h2>Archive scellée</h2>
+      <p>Chaîne complète des écritures comptabilisées, sous scellé unique, relisible
+         sans l'application. Le fichier se vérifie hors de l'étude :
+         <code>node src/verifier-archive.js ${echapper(archive.nom_fichier)} --racine &lt;empreinte&gt;</code></p>
+      <div class="alerte ${archive.valide ? 'information' : ''}">
+        <strong>Contre-épreuve du vérificateur indépendant</strong>
+        ${archive.valide
+          ? `${archive.volumetrie.ecritures} écritures, ${archive.volumetrie.lignes} lignes,
+             ${archive.volumetrie.evenements_audit} événements d'audit : archive vérifiable.`
+          : `${archive.anomalies.length} anomalie(s) : ${echapper(archive.anomalies.map((a) => a.code).join(', '))}`}
+      </div>
+      <table>
+        <thead><tr><th>Contrôle</th><th>Verdict</th></tr></thead>
+        <tbody>${archive.controles.map((c) => `
+          <tr>
+            <td>${echapper(c.intitule)}</td>
+            <td><span class="pastille ${c.verdict === 'OK' ? 'ok' : 'critique'}">${c.verdict.toLowerCase()}</span>
+                ${c.detail ? echapper(c.detail) : ''}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <p>Racine de la chaîne, à déposer hors de l'archive et à confronter lors du contrôle :</p>
+      <p class="empreinte">${echapper(archive.racine_chaine ?? '')}</p>
+      <div class="barre-outils">
+        <a href="/api/export/archive.json" download><button type="button">Exporter l'archive scellée</button></a>
+      </div>
     </div>
 
     <div class="carte" style="margin-top:1rem">

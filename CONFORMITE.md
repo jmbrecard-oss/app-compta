@@ -119,6 +119,7 @@ d'attestation peut s'appuyer ; ce n'est pas l'attestation.
 | Correction par contre-passation seulement | `contrepasser` génère l'écriture miroir, exige un motif écrit, conserve le lien entre les deux |
 | Chaînage cryptographique | Empreinte SHA-256 de chaque écriture, calculée sur son contenu **et** sur l'empreinte précédente. Toute altération ancienne casse la chaîne de toutes les suivantes |
 | Vérification à la demande | `verifierChaineEcritures()` recalcule la chaîne ; exposé dans l'écran Inspection, contrôlé avant toute clôture |
+| Vérification **sans le logiciel qui a produit les écritures** | Archive scellée exportable, rejouable par un tiers avec un vérificateur qui n'ouvre pas la base — voir § 7 |
 | Journal d'audit en ajout seul | Table `audit` chaînée, protégée par déclencheurs. Chaque opération tracée nominativement et horodatée |
 | Numérotation chronologique continue | Numéro attribué **à la comptabilisation**, pas à la saisie : séquence continue par journal et exercice, sans trou. Un brouillon abandonné ne consomme aucun numéro |
 | Pas de rétro-datation | `controleChronologie` refuse une écriture antérieure à la dernière comptabilisée dans le même journal |
@@ -308,6 +309,46 @@ les intérêts de son propre compte — mais il est porté au dossier d'inspecti
 compte client porté par une écriture qui débite, dans le même mouvement, une rubrique de ce
 dossier. C'est la forme que prend l'inscription des intérêts d'un placement. Cette convention
 figure parmi les points à arbitrer ci-dessous.
+  anomalies, rapprochements, volumétrie, état de la chaîne, piste d'audit — sur un écran unique.
+- **Archive scellée** : la chaîne complète des écritures comptabilisées, sous un scellé unique,
+  accompagnée de sa procédure de vérification indépendante — voir § 7.
+- Exports CSV de la balance et de l'état des comptes clients.
+
+### 7. Archive scellée et vérification indépendante
+
+Une chaîne d'empreintes vérifiée par le logiciel qui l'a produite ne prouve pas grand-chose : le
+contrôle et l'objet du contrôle sortent de la même main. L'archive scellée sépare les deux.
+
+| Règle | Mise en œuvre | Preuve |
+|---|---|---|
+| L'office doit pouvoir produire l'intégralité de sa chaîne d'écritures sous une forme figée | `genererArchive()` édite un document unique : chaîne complète des écritures comptabilisées, plan comptable, dossiers, exercices, journaux et piste d'audit. Jamais un extrait : une chaîne d'empreintes ne se vérifie que depuis son origine | test « l'archive scellée se vérifie par elle-même, sans accès à la base » |
+| Le document doit être infalsifiable sans que cela se voie | Scellé SHA-256 sur la **forme canonique** du document (clés triées, représentation unique). Le fichier reste indenté et lisible : la mise en page n'entre pas dans le scellé | test « l'altération d'un montant dans l'archive rompt le scellé » |
+| Un contrôle doit pouvoir être refait **sans le logiciel** | `src/verifier-archive.js` : utilitaire autonome qui n'ouvre jamais la base, ne connaît que le fichier reçu et la formule d'empreinte publiée (`src/hash.js`). Code de sortie 0 ou 1 | test « le vérificateur en ligne de commande s'exécute sans base de données » — il est lancé dans un processus séparé, avec un chemin de base volontairement inaccessible |
+| Refaire le scellé ne doit pas suffire à faire passer un faux | Le vérificateur rejoue la chaîne d'empreintes écriture par écriture, et non le seul scellé | test « un montant falsifié puis re-scellé reste détecté par la chaîne d'empreintes » |
+| Une écriture retirée doit laisser une trace | Double contrôle : rang de chaîne continu **et** numérotation continue par journal et exercice. Reconstituer la chaîne ne referme pas le trou de numérotation | test « la suppression d'une écriture au milieu de la chaîne est détectée » |
+| L'archive ne doit contenir que des écritures comptabilisées | Les brouillons sont exclus à la génération ; le vérificateur refuse en outre tout statut autre que `VALIDEE` ou `CONTREPASSEE` | test « les brouillons sont exclus de l'archive par construction » |
+| L'archive doit être cohérente comptablement, pas seulement cryptographiquement | Partie double par écriture et sur l'ensemble, montants entiers de XPF, références de comptes et de dossiers résolues dans l'archive elle-même | tests « une écriture déséquilibrée glissée dans l'archive est refusée », « une écriture référençant un compte absent de l'archive est signalée » |
+| L'édition d'une archive est un acte, pas une consultation | `EDITION_ARCHIVE` est tracé au journal d'audit avec le scellé délivré et la racine : toute archive ultérieure porte la trace des précédentes | écran Inspection, piste d'audit |
+
+**La limite, énoncée franchement.** Une chaîne d'empreintes intégralement reforgée est cohérente
+avec elle-même : un faussaire disposant du code source peut recalculer toutes les empreintes puis
+re-sceller. Aucun mécanisme interne au fichier ne peut détecter cela — c'est vrai de tout dispositif
+de ce type, y compris chez les éditeurs attestés.
+
+Ce qui ferme la porte est extérieur à l'archive : la **racine de la chaîne**, empreinte de la
+dernière écriture comptabilisée, qui résume en 64 caractères l'intégralité des écritures
+antérieures. Déposée ailleurs qu'au fichier — procès-verbal de la Chambre, registre de l'office,
+courrier au commissaire aux comptes — elle rend la falsification détectable :
+
+```bash
+node src/verifier-archive.js 1234567-ARCHIVE-20261020.json --racine <empreinte déposée>
+```
+
+Sans `--racine`, le vérificateur établit la cohérence interne de l'archive et le dit explicitement.
+Avec, il établit qu'il s'agit bien de l'archive arrêtée à cette date. La distinction est portée dans
+le rapport remis, et non laissée à l'interprétation.
+
+*Preuve : test « une chaîne entièrement reforgée est démasquée par la racine déposée ».*
 
 ---
 
@@ -324,7 +365,9 @@ figure parmi les points à arbitrer ci-dessous.
   de contrôles bloquants (Partie II, § 6) ; restent hors périmètre la télédéclaration, la
   liasse de résultat et la paie.
 - Gestion des actes et répertoire.
-- Archivage à valeur probante externalisé, sauvegarde hors site.
+- Archivage à valeur probante : l'**export d'archive scellée et sa vérification indépendante
+  existent** (Partie II § 7). Restent hors périmètre l'horodatage qualifié par un tiers de
+  confiance, le dépôt automatisé de la racine auprès d'une instance, et la sauvegarde hors site.
 - Signature électronique et téléprocédures.
 
 ### Points à arbitrer avec la Chambre
@@ -385,6 +428,10 @@ figure parmi les points à arbitrer ci-dessous.
    production du relevé** (15 jours), et la règle selon laquelle une période n'est couverte
    que par un arrêté au **dernier jour** de la période. Aucun texte calédonien consulté ne
    les fixe ; ils sont paramétrables dans `src/domain/surveillance.js`.
+6. **Dépôt de la racine de la chaîne** : à quelle périodicité l'office doit-il arrêter une archive,
+   et auprès de qui déposer la racine pour qu'elle soit opposable ? Le logiciel produit l'archive et
+   la racine ; il ne peut pas décider seul de leur dépôt, qui est le seul point rendant la
+   falsification détectable.
 
 ---
 
