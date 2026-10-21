@@ -12,6 +12,7 @@ import {
   controleRepresentationFonds,
   controleEtancheite,
 } from './controles.js';
+import { controleSequenceJournal } from './continuite.js';
 
 const EST_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -168,6 +169,10 @@ export function valider(id, utilisateur) {
        WHERE exercice_id = $ex AND journal = $j AND statut <> 'BROUILLON'`,
       { ex: exercice.id, j: e.journal },
     ).n) + 1;
+
+    // La serie du journal doit etre intacte : comptabiliser par-dessus un trou
+    // le figerait definitivement.
+    controleSequenceJournal(e.journal, exercice.id, numero);
 
     const precedent = un('SELECT hash, rang_chaine FROM ecritures WHERE rang_chaine IS NOT NULL ORDER BY rang_chaine DESC LIMIT 1');
     const hashPrecedent = precedent?.hash ?? GENESE;

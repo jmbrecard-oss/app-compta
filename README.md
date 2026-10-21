@@ -53,13 +53,20 @@ comptablement qu'une fois comptabilisée.
 **Comptabilisation.** À cet instant, et seulement à cet instant, l'écriture reçoit
 son numéro de séquence, passe les contrôles bloquants et entre dans la chaîne
 d'empreintes. Elle devient alors immuable : la base elle-même refuse toute
-modification. La seule correction possible est la contre-passation, qui exige un
-motif conservé.
+modification, l'ajout d'une ligne, le détachement de la chaîne — et le retour à
+l'état de brouillon, qui la ferait disparaître des livres. La seule correction
+possible est la contre-passation, qui exige un motif conservé.
 
 **Contrôles bloquants.** Équilibre, montants entiers en XPF, exercice ouvert,
-chronologie du journal, étanchéité office/clients, solde client jamais débiteur,
-représentation permanente des fonds clients. Un refus annule toute l'écriture et
-la laisse en brouillon, avec le motif exact.
+chronologie et continuité de la série du journal, étanchéité office/clients, solde
+client jamais débiteur, représentation permanente des fonds clients. Un refus annule
+toute l'écriture et la laisse en brouillon, avec le motif exact.
+
+**Continuité des livres.** Le scellement prouve qu'une écriture n'a pas été altérée ;
+il ne prouve pas qu'elle est toujours là. L'état de continuité énumère la série de
+chaque journal, désigne les numéros manquants et rapproche trois totaux qui doivent
+coïncider — livre-journal, grand livre, balance. Comptabiliser ou clôturer par-dessus
+un trou est refusé.
 
 **Rapprochement bancaire.** Pointage des mouvements, calcul du solde rapproché,
 clôture refusée tant qu'un écart subsiste.
@@ -68,8 +75,8 @@ clôture refusée tant qu'un écart subsiste.
 comptes clients, état de représentation des fonds. Exports FEC (18 colonnes) et CSV.
 
 **Inspection.** Un écran rassemble ce qu'un contrôle demande : volumétrie, état de
-la chaîne d'inaltérabilité, anomalies classées par gravité, exercices, piste
-d'audit nominative et horodatée.
+la chaîne d'inaltérabilité, continuité et concordance des livres, anomalies classées
+par gravité, exercices, piste d'audit nominative et horodatée.
 
 **Clôture d'exercice.** Diagnostic préalable listant chaque obstacle, génération des
 à-nouveaux, scellement de l'exercice par une empreinte.
@@ -98,6 +105,7 @@ src/
   audit.js auth.js    journal d'audit chaîné, sessions et droits
   domain/
     controles.js      règles de conformité — le cœur du dispositif
+    continuite.js     continuité des séries, concordance des livres
     ecritures.js      cycle brouillon → comptabilisation → contre-passation
     dossiers.js       dossiers et comptes clients individualisés
     rapprochement.js  rapprochement bancaire
@@ -108,7 +116,7 @@ src/
     fec.js            export FEC et CSV
   server.js           API HTTP et service des fichiers statiques
 public/               interface (HTML/CSS/JS, sans framework)
-test/                 21 tests de conformité
+test/                 35 tests de conformité
 ```
 
 ## Exploitation

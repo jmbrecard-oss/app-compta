@@ -6,6 +6,7 @@ import { ouvrirBase, un, tous, RACINE } from './db.js';
 import { initialiser } from './init.js';
 import { connecter, deconnecter, utilisateurDuJeton, exigerDroit, listerUtilisateurs, creerUtilisateur } from './auth.js';
 import { ErreurConformite, anomalies, etatRepresentationFonds } from './domain/controles.js';
+import { etatContinuiteLivres } from './domain/continuite.js';
 import * as Ecritures from './domain/ecritures.js';
 import * as Dossiers from './domain/dossiers.js';
 import * as Rapprochement from './domain/rapprochement.js';
@@ -105,10 +106,12 @@ route('GET', '/api/tableau-de-bord', 'lire', async () => {
   const exercice = un(`SELECT * FROM exercices WHERE statut = 'OUVERT' ORDER BY date_debut DESC LIMIT 1`);
   const periode = exercice ? { depuis: exercice.date_debut, jusqu: exercice.date_fin } : {};
   const resultat = Etats.compteDeResultat(periode);
+  const continuite = etatContinuiteLivres();
   return {
     exercice,
     representation_fonds: etatRepresentationFonds(),
-    anomalies: anomalies(),
+    anomalies: [...continuite.ecarts, ...anomalies()],
+    continuite: { conforme: continuite.conforme, ecarts: continuite.ecarts.length, concordance: continuite.concordance },
     resultat: { produits: resultat.total_produits, charges: resultat.total_charges, resultat: resultat.resultat },
     dossiers: {
       ouverts: un(`SELECT COUNT(*) AS n FROM dossiers WHERE statut = 'OUVERT'`).n,
@@ -209,6 +212,7 @@ route('GET', '/api/etats/inspection', 'lire', async ({ query }) => Etats.dossier
 // --------------------------------------------------------- controles et audit
 
 route('GET', '/api/controles/anomalies', 'lire', async () => anomalies());
+route('GET', '/api/controles/continuite', 'lire', async () => etatContinuiteLivres());
 route('GET', '/api/controles/chaine', 'lire', async () => ({
   ecritures: Ecritures.verifierChaineEcritures(),
   audit: verifierChaineAudit(),

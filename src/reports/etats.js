@@ -1,5 +1,6 @@
 import { un, tous } from '../db.js';
 import { etatRepresentationFonds, anomalies } from '../domain/controles.js';
+import { etatContinuiteLivres } from '../domain/continuite.js';
 
 const bornes = (p = {}) => ({
   depuis: p.depuis ?? null,
@@ -163,6 +164,7 @@ export function etatComptesClients() {
  */
 export function dossierInspection(p = {}) {
   const chaineEcritures = un(`SELECT COUNT(*) AS n FROM ecritures WHERE statut <> 'BROUILLON'`).n;
+  const continuite = etatContinuiteLivres();
   return {
     office: un('SELECT * FROM office WHERE id = 1'),
     edite_le: new Date().toISOString(),
@@ -171,7 +173,8 @@ export function dossierInspection(p = {}) {
     balance: balance(p),
     comptes_clients: etatComptesClients(),
     representation_fonds: etatRepresentationFonds(),
-    anomalies: anomalies(),
+    anomalies: [...continuite.ecarts, ...anomalies()],
+    continuite,
     comptes_attente: tous(`SELECT * FROM v_soldes WHERE nature = 'ATTENTE'`),
     rapprochements: tous(
       `SELECT r.*, c.intitule FROM rapprochements r JOIN comptes c ON c.numero = r.compte

@@ -131,6 +131,16 @@ async function vueTableau() {
             : '<span class="pastille ok">Aucun compte client débiteur</span>'}</p>
       </div>
       <div class="carte">
+        <div class="libelle-indicateur">Continuité des livres</div>
+        <div class="indicateur">${d.continuite.conforme ? '✓' : '✕'}</div>
+        <p>${d.continuite.conforme
+            ? `Livre-journal, grand livre et balance concordent : ${xpf(d.continuite.concordance.balance.debit)} XPF.`
+            : `${d.continuite.ecarts} écart(s) : des écritures comptabilisées ne figurent plus dans les états.`}</p>
+        <span class="pastille ${d.continuite.conforme ? 'ok' : 'critique'}">
+          ${d.continuite.conforme ? 'Aucune écriture manquante' : 'Livres incomplets'}
+        </span>
+      </div>
+      <div class="carte">
         <div class="libelle-indicateur">Inaltérabilité</div>
         <div class="indicateur">${d.chaine.valide ? '✓' : '✕'}</div>
         <p>${d.chaine.valide
@@ -803,6 +813,50 @@ async function vueInspection() {
           ? `${chaine.audit.evenements} événements tracés, chaîne intègre.`
           : `Rupture à l'événement ${chaine.audit.rupture_id} : ${echapper(chaine.audit.motif)}`}
       </div>
+    </div>
+
+    <div class="carte" style="margin-top:1rem">
+      <h2>Continuité et concordance des livres</h2>
+      <p>Le scellement prouve qu'une écriture n'a pas été altérée ; cet état prouve qu'elle est
+         toujours dans les livres. Les trois totaux doivent coïncider : tout écart désigne des
+         mouvements absents de l'un des états.</p>
+      <div class="alerte ${d.continuite.conforme ? 'information' : ''}">
+        <strong>Livres comptables</strong>
+        ${d.continuite.conforme
+          ? 'Numérotation continue dans chaque journal, aucun mouvement hors balance.'
+          : d.continuite.ecarts.map((e) => `${echapper(e.objet)} : ${echapper(e.message)}`).join('<br>')}
+      </div>
+      <table>
+        <thead><tr><th>État</th><th class="nb">Débit (XPF)</th><th class="nb">Crédit (XPF)</th><th class="nb">Lignes</th></tr></thead>
+        <tbody>
+          <tr><td>Livre-journal</td><td class="nb">${xpf(d.continuite.concordance.livre_journal.debit)}</td>
+              <td class="nb">${xpf(d.continuite.concordance.livre_journal.credit)}</td>
+              <td class="nb">${d.continuite.concordance.livre_journal.lignes}</td></tr>
+          <tr><td>Grand livre</td><td class="nb">${xpf(d.continuite.concordance.grand_livre.debit)}</td>
+              <td class="nb">${xpf(d.continuite.concordance.grand_livre.credit)}</td>
+              <td class="nb">${d.continuite.concordance.grand_livre.lignes}</td></tr>
+          <tr><td>Balance générale</td><td class="nb">${xpf(d.continuite.concordance.balance.debit)}</td>
+              <td class="nb">${xpf(d.continuite.concordance.balance.credit)}</td>
+              <td class="nb">${d.continuite.concordance.balance.lignes}</td></tr>
+        </tbody>
+      </table>
+      <h3>Numérotation des journaux</h3>
+      <div class="defilant"><table>
+        <thead><tr><th>Exercice</th><th>Journal</th><th class="nb">Premier</th><th class="nb">Dernier</th>
+          <th class="nb">Comptabilisées</th><th>Série</th></tr></thead>
+        <tbody>${d.continuite.sequences.map((sq) => `
+          <tr>
+            <td>${echapper(sq.exercice)}</td>
+            <td>${echapper(sq.journal)}</td>
+            <td class="nb">${sq.premier}</td>
+            <td class="nb">${sq.dernier}</td>
+            <td class="nb">${sq.comptabilisees}</td>
+            <td>${sq.continue
+                ? '<span class="pastille ok">continue</span>'
+                : `<span class="pastille critique">numéro(s) manquant(s) : ${sq.manquants.join(', ')}</span>`}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
     </div>
 
     <div class="carte" style="margin-top:1rem">

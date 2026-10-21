@@ -14,8 +14,17 @@ export function ouvrirBase(chemin = process.env.COMPTA_DB ?? join(RACINE, 'data'
   db = new DatabaseSync(chemin);
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
-  db.exec(readFileSync(join(ici, 'schema.sql'), 'utf8'));
+  appliquerSchema();
   return db;
+}
+
+/**
+ * (Re)applique le schema : tables, vues et verrous d'inalterabilite.
+ * Idempotent, et rejoue a chaque ouverture : une base creee par une version
+ * anterieure recoit ainsi les declencheurs ajoutes depuis.
+ */
+export function appliquerSchema() {
+  base().exec(readFileSync(join(ici, 'schema.sql'), 'utf8'));
 }
 
 export function base() {

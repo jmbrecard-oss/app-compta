@@ -1,6 +1,7 @@
 import { un, tous, exec, transaction } from '../db.js';
 import { tracer } from '../audit.js';
 import { ErreurConformite, etatRepresentationFonds } from './controles.js';
+import { etatContinuiteLivres } from './continuite.js';
 import { verifierChaineEcritures, creerBrouillon, valider } from './ecritures.js';
 import { sha256 } from '../hash.js';
 
@@ -59,6 +60,11 @@ export function controlePreCloture(exerciceId) {
   const fonds = etatRepresentationFonds();
   if (!fonds.conforme) {
     obstacles.push({ code: 'FONDS_NON_REPRESENTES', message: `Fonds clients non representes : deficit de ${-fonds.ecart} XPF.` });
+  }
+
+  const continuite = etatContinuiteLivres();
+  for (const e of continuite.ecarts) {
+    obstacles.push({ code: 'LIVRES_DISCONTINUS', message: `${e.objet} : ${e.message}` });
   }
 
   const chaine = verifierChaineEcritures();

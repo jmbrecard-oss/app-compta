@@ -222,6 +222,46 @@ BEGIN
   SELECT RAISE(ABORT, 'INALTERABILITE: ligne d''une ecriture validee, suppression interdite');
 END;
 
+-- Decomptabilisation : une ecriture validee ne peut pas redevenir un brouillon.
+-- Sans ce verrou, un simple UPDATE du statut fait disparaitre l'ecriture de la
+-- balance, du grand livre, du journal et du FEC en laissant son numero
+-- inoccupe -- et sans rompre la chaine d'empreintes, qui ne porte pas sur le
+-- statut. Seule transition conservee : VALIDEE -> CONTREPASSEE, qui est la
+-- correction reglementaire et laisse l'ecriture dans les livres.
+CREATE TRIGGER IF NOT EXISTS trg_ecriture_statut_fige
+BEFORE UPDATE OF statut ON ecritures
+WHEN OLD.statut IN ('VALIDEE','CONTREPASSEE')
+ AND NEW.statut <> OLD.statut
+ AND NOT (OLD.statut = 'VALIDEE' AND NEW.statut = 'CONTREPASSEE')
+BEGIN
+  SELECT RAISE(ABORT, 'INALTERABILITE: une ecriture comptabilisee ne peut pas revenir a l''etat de brouillon');
+END;
+
+-- Le scellement d'une ecriture comptabilisee est fige : detacher une ecriture
+-- de la chaine (rang_chaine a NULL) la soustrairait a la verification
+-- d'integrite tout en la laissant dans les livres.
+CREATE TRIGGER IF NOT EXISTS trg_ecriture_chainage_fige
+BEFORE UPDATE ON ecritures
+WHEN OLD.statut IN ('VALIDEE','CONTREPASSEE')
+ AND (IFNULL(NEW.rang_chaine, -1)     <> IFNULL(OLD.rang_chaine, -1)
+   OR IFNULL(NEW.hash_precedent, '')  <> IFNULL(OLD.hash_precedent, '')
+   OR IFNULL(NEW.valide_le, '')       <> IFNULL(OLD.valide_le, '')
+   OR IFNULL(NEW.valide_par, '')      <> IFNULL(OLD.valide_par, ''))
+BEGIN
+  SELECT RAISE(ABORT, 'INALTERABILITE: le chainage d''une ecriture comptabilisee est fige');
+END;
+
+-- Ajouter une ligne a une ecriture comptabilisee la desequilibre et fausse
+-- tous les etats. La modification et la suppression etaient deja verrouillees ;
+-- l'ajout ne l'etait pas, et la ligne injectee devenait elle-meme
+-- insupprimable.
+CREATE TRIGGER IF NOT EXISTS trg_ligne_ajout_interdit
+BEFORE INSERT ON lignes
+WHEN (SELECT statut FROM ecritures WHERE id = NEW.ecriture_id) IN ('VALIDEE','CONTREPASSEE')
+BEGIN
+  SELECT RAISE(ABORT, 'INALTERABILITE: ajout d''une ligne a une ecriture comptabilisee interdit');
+END;
+
 CREATE TRIGGER IF NOT EXISTS trg_audit_immuable_maj
 BEFORE UPDATE ON audit
 BEGIN
